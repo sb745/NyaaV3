@@ -5,7 +5,8 @@ from datetime import datetime
 from email.utils import formatdate
 
 import flask
-from werkzeug.urls import url_encode
+#from werkzeug.utils import url_encode
+from urllib.parse import urlencode  # now using Python's built-in urlencode
 
 from nyaa.backend import get_category_id_map
 from nyaa.torrents import create_magnet
@@ -81,7 +82,7 @@ def modify_query(**new_values):
     for key, value in new_values.items():
         args[key] = value
 
-    return '{}?{}'.format(flask.request.path, url_encode(args))
+    return '{}?{}'.format(flask.request.path, urlencode(args))
 
 
 @bp.app_template_global()

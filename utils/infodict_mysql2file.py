@@ -18,7 +18,7 @@ if not os.path.exists(outdir):
 db = MySQLdb.connect(host='localhost',
                      user='test',
                      passwd='test123',
-                     db='nyaav2',
+                     db='nyaav3',
                      cursorclass=MySQLdb.cursors.SSCursor)
 cur = db.cursor()
 

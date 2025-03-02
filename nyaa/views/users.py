@@ -3,6 +3,7 @@ import math
 import time
 from ipaddress import ip_address
 from itertools import chain
+from markupsafe import Markup
 
 import flask
 from flask_paginate import Pagination
@@ -74,7 +75,7 @@ def view_user(user_name):
         if (ban_form.ban_user.data and user.is_banned) or \
                 (ban_form.ban_userip.data and ipbanned) or \
                 (ban_form.unban.data and not user.is_banned and not bans):
-            flask.flash(flask.Markup('What the fuck are you doing?'), 'danger')
+            flask.flash(Markup('What the fuck are you doing?'), 'danger')
             return flask.redirect(url)
 
         user_str = "[{0}]({1})".format(user.username, url)
@@ -107,7 +108,7 @@ def view_user(user_name):
 
         db.session.commit()
 
-        flask.flash(flask.Markup('User has been successfully {0}.'.format(action)), 'success')
+        flask.flash(Markup('User has been successfully {0}.'.format(action)), 'success')
         return flask.redirect(url)
 
     req_args = flask.request.args
@@ -233,7 +234,7 @@ def view_user_comments(user_name):
 @bp.route('/user/activate/<payload>')
 def activate_user(payload):
     if app.config['MAINTENANCE_MODE']:
-        flask.flash(flask.Markup('<strong>Activations are currently disabled.</strong>'), 'danger')
+        flask.flash(Markup('<strong>Activations are currently disabled.</strong>'), 'danger')
         return flask.redirect(flask.url_for('main.home'))
 
     s = get_serializer()
@@ -259,7 +260,7 @@ def activate_user(payload):
     flask.session.permanent = True
     flask.session.modified = True
 
-    flask.flash(flask.Markup("You've successfully verified your account!"), 'success')
+    flask.flash(Markup("You've successfully verified your account!"), 'success')
     return flask.redirect(flask.url_for('main.home'))
 
 

@@ -1,6 +1,7 @@
 import json
 from ipaddress import ip_address
 from urllib.parse import quote
+from markupsafe import Markup
 
 import flask
 from werkzeug.datastructures import CombinedMultiDict
@@ -21,7 +22,7 @@ def view_torrent(torrent_id):
         torrent = models.Torrent.by_id(torrent_id)
     else:
         torrent = models.Torrent.query \
-                                .options(joinedload('filelist')) \
+                                .options(joinedload(models.Torrent.filelist)) \
                                 .filter_by(id=torrent_id) \
                                 .first()
 
@@ -135,7 +136,7 @@ def edit_torrent(torrent_id):
 
         db.session.commit()
 
-        flask.flash(flask.Markup(
+        flask.flash(Markup(
             'Torrent has been successfully edited! Changes might take a few minutes to show up.'),
             'success')
 
@@ -227,7 +228,7 @@ def _delete_torrent(torrent, form, banform):
         db.session.add(torrent)
 
     if not action and not ban_torrent:
-        flask.flash(flask.Markup('What the fuck are you doing?'), 'danger')
+        flask.flash(Markup('What the fuck are you doing?'), 'danger')
         return flask.redirect(flask.url_for('torrents.edit', torrent_id=torrent.id))
 
     if action and editor.is_moderator:
@@ -239,7 +240,7 @@ def _delete_torrent(torrent, form, banform):
 
     if action:
         db.session.commit()
-        flask.flash(flask.Markup('Torrent has been successfully {0}.'.format(action)), 'success')
+        flask.flash(Markup('Torrent has been successfully {0}.'.format(action)), 'success')
 
     if not banform or not (banform.ban_user.data or banform.ban_userip.data):
         return flask.redirect(url)
@@ -253,7 +254,7 @@ def _delete_torrent(torrent, form, banform):
 
     if (banform.ban_user.data and (not uploader or uploader.is_banned)) or \
             (banform.ban_userip.data and ipbanned):
-        flask.flash(flask.Markup('What the fuck are you doing?'), 'danger')
+        flask.flash(Markup('What the fuck are you doing?'), 'danger')
         return flask.redirect(flask.url_for('torrents.edit', torrent_id=torrent.id))
 
     flavor = "Nyaa" if app.config['SITE_FLAVOR'] == 'nyaa' else "Sukebei"
@@ -298,7 +299,7 @@ def _delete_torrent(torrent, form, banform):
 
     db.session.commit()
 
-    flask.flash(flask.Markup('Uploader has been successfully banned.'), 'success')
+    flask.flash(Markup('Uploader has been successfully banned.'), 'success')
 
     return flask.redirect(url)
 

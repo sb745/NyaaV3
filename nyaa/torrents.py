@@ -5,11 +5,11 @@ from urllib.parse import quote, urlencode
 import flask
 from flask import current_app as app
 
-from orderedset import OrderedSet
+from orderly_set import OrderlySet
 
 from nyaa import bencode
 
-USED_TRACKERS = OrderedSet()
+USED_TRACKERS = OrderlySet()
 
 
 def read_trackers_from_file(file_object):
@@ -37,8 +37,8 @@ def default_trackers():
 
 
 def get_trackers_and_webseeds(torrent):
-    trackers = OrderedSet()
-    webseeds = OrderedSet()
+    trackers = OrderlySet()
+    webseeds = OrderlySet()
 
     # Our main one first
     main_announce_url = app.config.get('MAIN_ANNOUNCE_URL')
@@ -63,7 +63,7 @@ def get_trackers_and_webseeds(torrent):
 
 
 def get_default_trackers():
-    trackers = OrderedSet()
+    trackers = OrderlySet()
 
     # Our main one first
     main_announce_url = app.config.get('MAIN_ANNOUNCE_URL')
@@ -114,7 +114,7 @@ def create_default_metadata_base(torrent, trackers=None, webseeds=None):
         webseeds = db_webseeds if webseeds is None else webseeds
 
     metadata_base = {
-        'created by': 'NyaaV2',
+        'created by': 'NyaaV3',
         'creation date': int(torrent.created_utc_timestamp),
         'comment': flask.url_for('torrents.view',
                                  torrent_id=torrent.id,

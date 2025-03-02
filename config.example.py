@@ -42,6 +42,12 @@ EXTERNAL_URLS = {'fap':'***', 'main':'***'}
 CSRF_SESSION_KEY = '***'
 SECRET_KEY = '***'
 
+# Session cookie configuration
+SESSION_COOKIE_NAME = 'nyaav3_session'
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+
 # Present a recaptcha for anonymous uploaders
 USE_RECAPTCHA = False
 # Require email validation
@@ -82,7 +88,7 @@ RECAPTCHA_PRIVATE_KEY = '***'
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 if USE_MYSQL:
-    SQLALCHEMY_DATABASE_URI = ('mysql://test:test123@localhost/nyaav2?charset=utf8mb4')
+    SQLALCHEMY_DATABASE_URI = ('mysql://test:test123@localhost/nyaav3?charset=utf8mb4')
 else:
     SQLALCHEMY_DATABASE_URI = (
         'sqlite:///' + os.path.join(BASE_DIR, 'test.db') + '?check_same_thread=False')

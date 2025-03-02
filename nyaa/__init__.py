@@ -1,8 +1,10 @@
 import logging
 import os
 import string
+from typing import Any, Optional
 
 import flask
+from flask import Flask
 from flask_assets import Bundle  # noqa F401
 
 from nyaa.api_handler import api_blueprint
@@ -18,11 +20,17 @@ from nyaa.views import register_views
 flask.url_for = caching_url_for
 
 
-def create_app(config):
+def create_app(config: Any) -> Flask:
     """ Nyaa app factory """
     app = flask.Flask(__name__)
     app.config.from_object(config)
 
+    # Session cookie configuration
+    app.config['SESSION_COOKIE_NAME'] = 'nyaav3_session'
+    app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    
     # Don't refresh cookie each request
     app.config['SESSION_REFRESH_EACH_REQUEST'] = False
 
@@ -34,24 +42,24 @@ def create_app(config):
 
         # Forbid caching
         @app.after_request
-        def forbid_cache(request):
-            request.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
-            request.headers['Pragma'] = 'no-cache'
-            request.headers['Expires'] = '0'
-            return request
+        def forbid_cache(response: flask.Response) -> flask.Response:
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            return response
 
         # Add a timer header to the requests when debugging
         # This gives us a simple way to benchmark requests off-app
         import time
 
         @app.before_request
-        def timer_before_request():
+        def timer_before_request() -> None:
             flask.g.request_start_time = time.time()
 
         @app.after_request
-        def timer_after_request(request):
-            request.headers['X-Timer'] = time.time() - flask.g.request_start_time
-            return request
+        def timer_after_request(response: flask.Response) -> flask.Response:
+            response.headers['X-Timer'] = str(time.time() - flask.g.request_start_time)
+            return response
 
     else:
         app.logger.setLevel(logging.WARNING)
@@ -63,17 +71,17 @@ def create_app(config):
             app.config['LOG_FILE'], maxBytes=10000, backupCount=1)
         app.logger.addHandler(app.log_handler)
 
-    # Log errors and display a message to the user in production mdode
+    # Log errors and display a message to the user in production mode
     if not app.config['DEBUG']:
         @app.errorhandler(500)
-        def internal_error(exception):
+        def internal_error(exception: Exception) -> flask.Response:
             random_id = random_string(8, string.ascii_uppercase + string.digits)
             # Pst. Not actually unique, but don't tell anyone!
-            app.logger.error('Exception occurred! Unique ID: %s', random_id, exc_info=exception)
+            app.logger.error(f'Exception occurred! Unique ID: {random_id}', exc_info=exception)
             markup_source = ' '.join([
                 '<strong>An error occurred!</strong>',
                 'Debug information has been logged.',
-                'Please pass along this ID: <kbd>{}</kbd>'.format(random_id)
+                f'Please pass along this ID: <kbd>{random_id}</kbd>'
             ])
 
             flask.flash(flask.Markup(markup_source), 'danger')
@@ -101,10 +109,15 @@ def create_app(config):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['MYSQL_DATABASE_CHARSET'] = 'utf8mb4'
     db.init_app(app)
+    
+    # Import the fixed Ban.banned method
+    with app.app_context():
+        import nyaa.fixed_ban
 
     # Assets
     assets.init_app(app)
-    assets._named_bundles = {}  # Hack to fix state carrying over in tests
+    if hasattr(assets, '_named_bundles'):
+        assets._named_bundles = {}  # Hack to fix state carrying over in tests
     main_js = Bundle('js/main.js', filters='rjsmin', output='js/main.min.js')
     bs_js = Bundle('js/bootstrap-select.js', filters='rjsmin',
                    output='js/bootstrap-select.min.js')

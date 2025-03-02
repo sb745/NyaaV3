@@ -11,7 +11,8 @@ from wtforms import (BooleanField, HiddenField, PasswordField, SelectField, Stri
                      SubmitField, TextAreaField)
 from wtforms.validators import (DataRequired, Email, EqualTo, Length, Optional, Regexp,
                                 StopValidation, ValidationError)
-from wtforms.widgets import HTMLString  # For DisabledSelectField
+# from wtforms.widgets import HTMLString  # For DisabledSelectField
+from markupsafe import Markup
 from wtforms.widgets import Select as SelectWidget  # For DisabledSelectField
 from wtforms.widgets import html_params
 
@@ -223,7 +224,7 @@ class DisabledSelectWidget(SelectWidget):
             extra = disabled and {'disabled': ''} or {}
             html.append(self.render_option(val, label, selected, **extra))
         html.append('</select>')
-        return HTMLString(''.join(html))
+        return Markup(''.join(html))
 
 
 class DisabledSelectField(SelectField):
@@ -265,7 +266,7 @@ class InlineButtonWidget(object):
         kwargs.setdefault('type', self.input_type)
         if not label:
             label = field.label.text
-        return HTMLString('<button %s>' % self.html_params(name=field.name, **kwargs) + label)
+        return Markup('<button %s>' % self.html_params(name=field.name, **kwargs) + label)
 
 
 class StringSubmitField(StringField):

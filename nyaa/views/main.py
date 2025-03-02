@@ -1,8 +1,9 @@
 import base64
 import math
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
+from markupsafe import Markup
 
 import flask
 from flask_paginate import Pagination
@@ -37,8 +38,8 @@ def before_request():
 
         flask.g.user = user
 
-        if 'timeout' not in flask.session or flask.session['timeout'] < datetime.now():
-            flask.session['timeout'] = datetime.now() + timedelta(days=7)
+        if 'timeout' not in flask.session or flask.session['timeout'] < datetime.now(timezone.utc):
+            flask.session['timeout'] = datetime.now(timezone.utc) + timedelta(days=7)
             flask.session.permanent = True
             flask.session.modified = True
 
@@ -140,7 +141,7 @@ def home(rss):
     infohash_torrent = special_results.get('infohash_torrent')
     if infohash_torrent:
         # infohash_torrent is only set if this is not RSS or userpage search
-        flask.flash(flask.Markup('You were redirected here because '
+        flask.flash(Markup('You were redirected here because '
                                  'the given hash matched this torrent.'), 'info')
         # Redirect user from search to the torrent if we found one with the specific info_hash
         return flask.redirect(flask.url_for('torrents.view', torrent_id=infohash_torrent.id))

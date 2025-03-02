@@ -3,15 +3,16 @@ import re
 import shlex
 import threading
 import time
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import flask
-from flask_sqlalchemy import Pagination
+from nyaa.custom_pagination import CustomPagination
 
 import sqlalchemy
+from sqlalchemy import select, func, bindparam
 import sqlalchemy_fulltext.modes as FullTextMode
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Q, Search
-from sqlalchemy.ext import baked
 from sqlalchemy_fulltext import FullTextSearch
 
 from nyaa import models
@@ -30,7 +31,7 @@ SERACH_PAGINATE_DISPLAY_MSG = ('Displaying results {start}-{end} out of {total} 
 _index_name_cache = {}
 
 
-def _get_index_name(column):
+def _get_index_name(column) -> Optional[str]:
     ''' Returns an index name for a given column, or None.
         Only considers single-column indexes.
         Results are cached in memory (until app restart). '''
@@ -43,7 +44,7 @@ def _get_index_name(column):
         try:
             column_table = sqlalchemy.Table(column_table_name,
                                             sqlalchemy.MetaData(),
-                                            autoload=True, autoload_with=db.engine)
+                                            autoload_with=db.engine)
         except sqlalchemy.exc.NoSuchTableError:
             # Trust the developer to notice this?
             pass
@@ -60,7 +61,8 @@ def _get_index_name(column):
     return table_indexes.get(column.name)
 
 
-def _generate_query_string(term, category, filter, user):
+def _generate_query_string(term: Optional[str], category: Optional[str], 
+                          filter: Optional[str], user: Optional[int]) -> Dict[str, str]:
     params = {}
     if term:
         params['q'] = str(term)
@@ -370,16 +372,23 @@ class QueryPairCaller(object):
         return wrapper
 
 
-def search_db(term='', user=None, sort='id', order='desc', category='0_0',
-              quality_filter='0', page=1, rss=False, admin=False,
-              logged_in_user=None, per_page=75):
+def search_db(term: str = '', user: Optional[int] = None, sort: str = 'id', 
+              order: str = 'desc', category: str = '0_0',
+              quality_filter: str = '0', page: int = 1, rss: bool = False, 
+              admin: bool = False, logged_in_user: Optional[models.User] = None, 
+              per_page: int = 75) -> Union[CustomPagination, List[models.Torrent]]:
+    """
+    Search the database for torrents matching the given criteria.
+    
+    This is the SQLAlchemy 2.0 compatible version of the search function.
+    """
     if page > 4294967295:
         flask.abort(404)
 
     MAX_PAGES = app.config.get("MAX_PAGES", 0)
 
     same_user = False
-    if logged_in_user:
+    if logged_in_user and user:
         same_user = logged_in_user.id == user
 
     # Logged in users should always be able to view their full listing.
@@ -427,10 +436,10 @@ def search_db(term='', user=None, sort='id', order='desc', category='0_0',
         flask.abort(400)
 
     if user:
-        user = models.User.by_id(user)
-        if not user:
+        user_obj = models.User.by_id(user)
+        if not user_obj:
             flask.abort(404)
-        user = user.id
+        user = user_obj.id
 
     main_category = None
     sub_category = None
@@ -460,22 +469,22 @@ def search_db(term='', user=None, sort='id', order='desc', category='0_0',
 
     model_class = models.TorrentNameSearch if term else models.Torrent
 
-    query = db.session.query(model_class)
-
-    # This is... eh. Optimize the COUNT() query since MySQL is bad at that.
-    # See http://docs.sqlalchemy.org/en/rel_1_1/orm/query.html#sqlalchemy.orm.query.Query.count
-    # Wrap the queries into the helper class to deduplicate code and apply filters to both in one go
-    count_query = db.session.query(sqlalchemy.func.count(model_class.id))
-    qpc = QueryPairCaller(query, count_query)
+    # Create the base query
+    query = select(model_class)
+    count_query = select(func.count(model_class.id))
 
     # User view (/user/username)
     if user:
-        qpc.filter(models.Torrent.uploader_id == user)
+        query = query.where(models.Torrent.uploader_id == user)
+        count_query = count_query.where(models.Torrent.uploader_id == user)
 
         if not admin:
             # Hide all DELETED torrents if regular user
-            qpc.filter(models.Torrent.flags.op('&')(
-                int(models.TorrentFlags.DELETED)).is_(False))
+            deleted_filter = models.Torrent.flags.op('&')(
+                int(models.TorrentFlags.DELETED)).is_(False)
+            query = query.where(deleted_filter)
+            count_query = count_query.where(deleted_filter)
+            
             # If logged in user is not the same as the user being viewed,
             # show only torrents that aren't hidden or anonymous
             #
@@ -485,277 +494,99 @@ def search_db(term='', user=None, sort='id', order='desc', category='0_0',
             # On RSS pages in user view,
             # show only torrents that aren't hidden or anonymous no matter what
             if not same_user or rss:
-                qpc.filter(models.Torrent.flags.op('&')(
-                    int(models.TorrentFlags.HIDDEN | models.TorrentFlags.ANONYMOUS)).is_(False))
+                hidden_anon_filter = models.Torrent.flags.op('&')(
+                    int(models.TorrentFlags.HIDDEN | models.TorrentFlags.ANONYMOUS)).is_(False)
+                query = query.where(hidden_anon_filter)
+                count_query = count_query.where(hidden_anon_filter)
     # General view (homepage, general search view)
     else:
         if not admin:
             # Hide all DELETED torrents if regular user
-            qpc.filter(models.Torrent.flags.op('&')(
-                int(models.TorrentFlags.DELETED)).is_(False))
+            deleted_filter = models.Torrent.flags.op('&')(
+                int(models.TorrentFlags.DELETED)).is_(False)
+            query = query.where(deleted_filter)
+            count_query = count_query.where(deleted_filter)
+            
             # If logged in, show all torrents that aren't hidden unless they belong to you
             # On RSS pages, show all public torrents and nothing more.
             if logged_in_user and not rss:
-                qpc.filter(
+                hidden_or_user_filter = (
                     (models.Torrent.flags.op('&')(int(models.TorrentFlags.HIDDEN)).is_(False)) |
-                    (models.Torrent.uploader_id == logged_in_user.id))
+                    (models.Torrent.uploader_id == logged_in_user.id)
+                )
+                query = query.where(hidden_or_user_filter)
+                count_query = count_query.where(hidden_or_user_filter)
             # Otherwise, show all torrents that aren't hidden
             else:
-                qpc.filter(models.Torrent.flags.op('&')(
-                    int(models.TorrentFlags.HIDDEN)).is_(False))
+                hidden_filter = models.Torrent.flags.op('&')(
+                    int(models.TorrentFlags.HIDDEN)).is_(False)
+                query = query.where(hidden_filter)
+                count_query = count_query.where(hidden_filter)
 
     if main_category:
-        qpc.filter(models.Torrent.main_category_id == main_cat_id)
+        main_cat_filter = models.Torrent.main_category_id == main_cat_id
+        query = query.where(main_cat_filter)
+        count_query = count_query.where(main_cat_filter)
     elif sub_category:
-        qpc.filter((models.Torrent.main_category_id == main_cat_id) &
-                   (models.Torrent.sub_category_id == sub_cat_id))
+        sub_cat_filter = (
+            (models.Torrent.main_category_id == main_cat_id) &
+            (models.Torrent.sub_category_id == sub_cat_id)
+        )
+        query = query.where(sub_cat_filter)
+        count_query = count_query.where(sub_cat_filter)
 
     if filter_tuple:
-        qpc.filter(models.Torrent.flags.op('&')(
-            int(filter_tuple[0])).is_(filter_tuple[1]))
+        filter_condition = models.Torrent.flags.op('&')(
+            int(filter_tuple[0])).is_(filter_tuple[1])
+        query = query.where(filter_condition)
+        count_query = count_query.where(filter_condition)
 
     if term:
         for item in shlex.split(term, posix=False):
             if len(item) >= 2:
-                qpc.filter(FullTextSearch(
-                    item, models.TorrentNameSearch, FullTextMode.NATURAL))
-    query, count_query = qpc.items
+                fulltext_filter = FullTextSearch(
+                    item, models.TorrentNameSearch, FullTextMode.NATURAL)
+                query = query.where(fulltext_filter)
+                count_query = count_query.where(fulltext_filter)
+
     # Sort and order
     if sort_column.class_ != models.Torrent:
         index_name = _get_index_name(sort_column)
         query = query.join(sort_column.class_)
-        query = query.with_hint(sort_column.class_, 'USE INDEX ({0})'.format(index_name))
-
-    query = query.order_by(getattr(sort_column, order)())
+        
+        # Add index hint for MySQL if available
+        if index_name and hasattr(db.engine.dialect, 'name') and db.engine.dialect.name == 'mysql':
+            # In SQLAlchemy 2.0, we use execution_options instead of with_hint
+            # This is MySQL specific - for other databases, different approaches would be needed
+            query = query.execution_options(
+                mysql_hint=f"USE INDEX ({index_name})"
+            )
+        
+    if order_ == 'desc':
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
 
     if rss:
         query = query.limit(per_page)
+        return db.session.execute(query).scalars().all()
     else:
-        query = query.paginate_faste(page, per_page=per_page, step=5, count_query=count_query,
-                                     max_page=MAX_PAGES)
-
-    return query
-
-
-# Baked queries follow
-
-class BakedPair(object):
-    def __init__(self, *items):
-        self.items = list(items)
-
-    def __iadd__(self, other):
-        for item in self.items:
-            item += other
-
-        return self
-
-
-bakery = baked.bakery()
-
-
-BAKED_SORT_KEYS = {
-    'id': models.Torrent.id,
-    'size': models.Torrent.filesize,
-    'comments': models.Torrent.comment_count,
-    'seeders': models.Statistic.seed_count,
-    'leechers': models.Statistic.leech_count,
-    'downloads': models.Statistic.download_count
-}
-
-BAKED_SORT_LAMBDAS = {
-    'id-asc': lambda q: q.order_by(models.Torrent.id.asc()),
-    'id-desc': lambda q: q.order_by(models.Torrent.id.desc()),
-
-    'size-asc': lambda q: q.order_by(models.Torrent.filesize.asc()),
-    'size-desc': lambda q: q.order_by(models.Torrent.filesize.desc()),
-
-    'comments-asc': lambda q: q.order_by(models.Torrent.comment_count.asc()),
-    'comments-desc': lambda q: q.order_by(models.Torrent.comment_count.desc()),
-
-    # This is a bit stupid, but programmatically generating these mixed up the baked keys, so deal.
-    'seeders-asc': lambda q: q.join(models.Statistic).with_hint(
-        models.Statistic, 'USE INDEX (idx_nyaa_statistics_seed_count)'
-    ).order_by(models.Statistic.seed_count.asc(),  models.Torrent.id.asc()),
-    'seeders-desc': lambda q: q.join(models.Statistic).with_hint(
-        models.Statistic, 'USE INDEX (idx_nyaa_statistics_seed_count)'
-    ).order_by(models.Statistic.seed_count.desc(), models.Torrent.id.desc()),
-
-    'leechers-asc': lambda q: q.join(models.Statistic).with_hint(
-        models.Statistic, 'USE INDEX (idx_nyaa_statistics_leech_count)'
-    ).order_by(models.Statistic.leech_count.asc(),  models.Torrent.id.asc()),
-    'leechers-desc': lambda q: q.join(models.Statistic).with_hint(
-        models.Statistic, 'USE INDEX (idx_nyaa_statistics_leech_count)'
-    ).order_by(models.Statistic.leech_count.desc(), models.Torrent.id.desc()),
-
-    'downloads-asc': lambda q: q.join(models.Statistic).with_hint(
-        models.Statistic, 'USE INDEX (idx_nyaa_statistics_download_count)'
-    ).order_by(models.Statistic.download_count.asc(),  models.Torrent.id.asc()),
-    'downloads-desc': lambda q: q.join(models.Statistic).with_hint(
-        models.Statistic, 'USE INDEX (idx_nyaa_statistics_download_count)'
-    ).order_by(models.Statistic.download_count.desc(), models.Torrent.id.desc()),
-}
-
-
-BAKED_FILTER_LAMBDAS = {
-    '0': None,
-    '1': lambda q: (
-        q.filter(models.Torrent.flags.op('&')(models.TorrentFlags.REMAKE.value).is_(False))
-    ),
-    '2': lambda q: (
-        q.filter(models.Torrent.flags.op('&')(models.TorrentFlags.TRUSTED.value).is_(True))
-    ),
-    '3': lambda q: (
-        q.filter(models.Torrent.flags.op('&')(models.TorrentFlags.COMPLETE.value).is_(True))
-    ),
-}
-
-
-def search_db_baked(term='', user=None, sort='id', order='desc', category='0_0',
-                    quality_filter='0', page=1, rss=False, admin=False,
-                    logged_in_user=None, per_page=75):
-    if page > 4294967295:
-        flask.abort(404)
-
-    MAX_PAGES = app.config.get("MAX_PAGES", 0)
-
-    if MAX_PAGES and page > MAX_PAGES:
-        flask.abort(flask.Response("You've exceeded the maximum number of pages. Please "
-                                   "make your search query less broad.", 403))
-
-    sort_lambda = BAKED_SORT_LAMBDAS.get('{}-{}'.format(sort, order).lower())
-    if not sort_lambda:
-        flask.abort(400)
-
-    sentinel = object()
-    filter_lambda = BAKED_FILTER_LAMBDAS.get(quality_filter.lower(), sentinel)
-    if filter_lambda is sentinel:
-        flask.abort(400)
-
-    if user:
-        user = models.User.by_id(user)
-        if not user:
+        # Get the total count
+        total_count = db.session.execute(count_query).scalar_one()
+        
+        # Apply pagination
+        query = query.limit(per_page).offset((page - 1) * per_page)
+        items = db.session.execute(query).scalars().all()
+        
+        if not items and page != 1:
             flask.abort(404)
-        user = user.id
+            
+        # Create a pagination object
+        return CustomPagination(query, page, per_page, total_count, items)
 
-    main_cat_id = 0
-    sub_cat_id = 0
 
-    if category:
-        cat_match = re.match(r'^(\d+)_(\d+)$', category)
-        if not cat_match:
-            flask.abort(400)
-
-        main_cat_id = int(cat_match.group(1))
-        sub_cat_id = int(cat_match.group(2))
-
-        if main_cat_id > 0:
-            if sub_cat_id > 0:
-                sub_category = models.SubCategory.by_category_ids(main_cat_id, sub_cat_id)
-                if not sub_category:
-                    flask.abort(400)
-            else:
-                main_category = models.MainCategory.by_id(main_cat_id)
-                if not main_category:
-                    flask.abort(400)
-
-    # Force sort by id desc if rss
-    if rss:
-        sort_lambda = BAKED_SORT_LAMBDAS['id-desc']
-
-    same_user = False
-    if logged_in_user:
-        same_user = logged_in_user.id == user
-
-    if term:
-        query = bakery(lambda session: session.query(models.TorrentNameSearch))
-        count_query = bakery(lambda session: session.query(
-            sqlalchemy.func.count(models.TorrentNameSearch.id)))
-    else:
-        query = bakery(lambda session: session.query(models.Torrent))
-        # This is... eh. Optimize the COUNT() query since MySQL is bad at that.
-        # See http://docs.sqlalchemy.org/en/rel_1_1/orm/query.html#sqlalchemy.orm.query.Query.count
-        # Wrap the queries into the helper class to deduplicate code and
-        # apply filters to both in one go
-        count_query = bakery(lambda session: session.query(
-            sqlalchemy.func.count(models.Torrent.id)))
-
-    qpc = BakedPair(query, count_query)
-    bp = sqlalchemy.bindparam
-
-    baked_params = {}
-
-    # User view (/user/username)
-    if user:
-        qpc += lambda q: q.filter(models.Torrent.uploader_id == bp('user'))
-        baked_params['user'] = user
-
-        if not admin:
-            # Hide all DELETED torrents if regular user
-            qpc += lambda q: q.filter(models.Torrent.flags.op('&')
-                                      (int(models.TorrentFlags.DELETED)).is_(False))
-            # If logged in user is not the same as the user being viewed,
-            # show only torrents that aren't hidden or anonymous
-            #
-            # If logged in user is the same as the user being viewed,
-            # show all torrents including hidden and anonymous ones
-            #
-            # On RSS pages in user view,
-            # show only torrents that aren't hidden or anonymous no matter what
-            if not same_user or rss:
-                qpc += lambda q: (
-                    q.filter(
-                        models.Torrent.flags.op('&')(
-                            int(models.TorrentFlags.HIDDEN | models.TorrentFlags.ANONYMOUS)
-                        ).is_(False)
-                    )
-                )
-    # General view (homepage, general search view)
-    else:
-        if not admin:
-            # Hide all DELETED torrents if regular user
-            qpc += lambda q: q.filter(models.Torrent.flags.op('&')
-                                      (int(models.TorrentFlags.DELETED)).is_(False))
-            # If logged in, show all torrents that aren't hidden unless they belong to you
-            # On RSS pages, show all public torrents and nothing more.
-            if logged_in_user and not rss:
-                qpc += lambda q: q.filter(
-                    (models.Torrent.flags.op('&')(int(models.TorrentFlags.HIDDEN)).is_(False)) |
-                    (models.Torrent.uploader_id == bp('logged_in_user'))
-                )
-                baked_params['logged_in_user'] = logged_in_user
-            # Otherwise, show all torrents that aren't hidden
-            else:
-                qpc += lambda q: q.filter(models.Torrent.flags.op('&')
-                                          (int(models.TorrentFlags.HIDDEN)).is_(False))
-
-    if sub_cat_id:
-        qpc += lambda q: q.filter(
-            (models.Torrent.main_category_id == bp('main_cat_id')),
-            (models.Torrent.sub_category_id == bp('sub_cat_id'))
-        )
-        baked_params['main_cat_id'] = main_cat_id
-        baked_params['sub_cat_id'] = sub_cat_id
-    elif main_cat_id:
-        qpc += lambda q: q.filter(models.Torrent.main_category_id == bp('main_cat_id'))
-        baked_params['main_cat_id'] = main_cat_id
-
-    if filter_lambda:
-        qpc += filter_lambda
-
-    if term:
-        raise Exception('Baked search does not support search terms')
-
-    # Sort and order
-    query += sort_lambda
-
-    if rss:
-        query += lambda q: q.limit(bp('per_page'))
-        baked_params['per_page'] = per_page
-
-        return query(db.session()).params(**baked_params).all()
-
-    return baked_paginate(query, count_query, baked_params,
-                          page, per_page=per_page, step=5, max_page=MAX_PAGES)
+# Alias for backward compatibility
+search_db_baked = search_db
 
 
 class ShoddyLRU(object):
@@ -800,33 +631,33 @@ class ShoddyLRU(object):
 LRU_CACHE = ShoddyLRU(256, 60)
 
 
-def baked_paginate(query, count_query, params, page=1, per_page=50, max_page=None, step=5):
+def paginate_query(query, count_query, page=1, per_page=50, max_page=None):
+    """
+    Paginate a SQLAlchemy 2.0 query.
+    
+    This is a replacement for the baked_paginate function that uses SQLAlchemy 2.0 style.
+    """
     if page < 1:
         flask.abort(404)
 
     if max_page and page > max_page:
         flask.abort(404)
-    bp = sqlalchemy.bindparam
-
-    ses = db.session()
 
     # Count all items, use cache
-    if app.config['COUNT_CACHE_DURATION']:
-        query_key = (count_query._effective_key(ses), tuple(sorted(params.items())))
+    if app.config.get('COUNT_CACHE_DURATION'):
+        # Create a cache key based on the query and parameters
+        # This is a simplified version compared to the bakery's _effective_key
+        query_key = str(count_query)
         total_query_count = LRU_CACHE.get(query_key)
         if total_query_count is None:
-            total_query_count = count_query(ses).params(**params).scalar()
+            total_query_count = db.session.execute(count_query).scalar_one()
             LRU_CACHE.put(query_key, total_query_count, expiry=app.config['COUNT_CACHE_DURATION'])
     else:
-        total_query_count = count_query(ses).params(**params).scalar()
+        total_query_count = db.session.execute(count_query).scalar_one()
 
-    # Grab items on current page
-    query += lambda q: q.limit(bp('limit')).offset(bp('offset'))
-    params['limit'] = per_page
-    params['offset'] = (page - 1) * per_page
-
-    res = query(ses).params(**params)
-    items = res.all()
+    # Apply pagination
+    paginated_query = query.limit(per_page).offset((page - 1) * per_page)
+    items = db.session.execute(paginated_query).scalars().all()
 
     if max_page:
         total_query_count = min(total_query_count, max_page * per_page)
@@ -837,4 +668,8 @@ def baked_paginate(query, count_query, params, page=1, per_page=50, max_page=Non
     if not items and page != 1:
         flask.abort(404)
 
-    return Pagination(None, page, per_page, total_query_count, items)
+    return CustomPagination(None, page, per_page, total_query_count, items)
+
+
+# Alias for backward compatibility
+baked_paginate = paginate_query

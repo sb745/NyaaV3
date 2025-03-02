@@ -48,7 +48,7 @@ services:
       - MYSQL_RANDOM_ROOT_PASSWORD=yes
       - MYSQL_USER=nyaadev
       - MYSQL_PASSWORD=ZmtB2oihHFvc39JaEDoF
-      - MYSQL_DATABASE=nyaav2
+      - MYSQL_DATABASE=nyaav3
 
   elasticsearch:
     image: elasticsearch:6.5.4

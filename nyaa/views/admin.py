@@ -1,5 +1,6 @@
 from datetime import datetime
 from ipaddress import ip_address
+from markupsafe import Markup
 
 import flask
 
@@ -162,10 +163,10 @@ def view_trusted_application(app_id):
             if decision_form.accept.data:
                 app.status = models.TrustedApplicationStatus.ACCEPTED
                 app.submitter.level = models.UserLevelType.TRUSTED
-                flask.flash(flask.Markup('Application has been <b>accepted</b>.'), 'success')
+                flask.flash(Markup('Application has been <b>accepted</b>.'), 'success')
             elif decision_form.reject.data:
                 app.status = models.TrustedApplicationStatus.REJECTED
-                flask.flash(flask.Markup('Application has been <b>rejected</b>.'), 'success')
+                flask.flash(Markup('Application has been <b>rejected</b>.'), 'success')
             _send_trusted_decision_email(app.submitter, bool(decision_form.accept.data))
             db.session.commit()
             return flask.redirect(flask.url_for('admin.trusted_application', app_id=app_id))

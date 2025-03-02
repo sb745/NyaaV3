@@ -4,8 +4,11 @@
 This tool is designed to assist developers run common tasks, such as
 checking the code for lint issues, auto fixing some lint issues and running tests.
 It imports modules lazily (as-needed basis), so it runs faster!
+
+Compatible with Python 3.13.
 """
 import sys
+from typing import List, Optional, Generator, Any, Union
 
 LINT_PATHS = [
     'nyaa/',
@@ -14,14 +17,14 @@ LINT_PATHS = [
 TEST_PATHS = ['tests']
 
 
-def print_cmd(cmd, args):
+def print_cmd(cmd: str, args: List[str]) -> None:
     """ Prints the command and args as you would run them manually. """
     print('Running: {0}\n'.format(
         ' '.join([('\'' + a + '\'' if ' ' in a else a) for a in [cmd] + args])))
     sys.stdout.flush()  # Make sure stdout is flushed before continuing.
 
 
-def check_config_values():
+def check_config_values() -> bool:
     """ Verify that all max_line_length values match. """
     import configparser
     config = configparser.ConfigParser()
@@ -32,7 +35,7 @@ def check_config_values():
     autopep8 = config.get('pycodestyle', 'max_line_length', fallback=None)
     isort = config.get('isort', 'line_length', fallback=None)
 
-    values = (v for v in (flake8, autopep8, isort) if v is not None)
+    values: Generator[str, None, None] = (v for v in (flake8, autopep8, isort) if v is not None)
     found = next(values, False)
     if not found:
         print('Warning: No max line length setting set in setup.cfg.')
@@ -44,7 +47,7 @@ def check_config_values():
     return True
 
 
-def print_help():
+def print_help() -> int:
     print('Nyaa Development Helper')
     print('=======================\n')
     print('Usage: {0} command [different arguments]'.format(sys.argv[0]))
@@ -62,7 +65,7 @@ def print_help():
 
 
 if __name__ == '__main__':
-    assert sys.version_info >= (3, 6), "Python 3.6 is required"
+    assert sys.version_info >= (3, 13), "Python 3.13 is required"
 
     check_config_values()
 

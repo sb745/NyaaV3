@@ -18,7 +18,7 @@ class NyaaTestCase(unittest.TestCase):
 
         # Use a separate database for testing
         # if USE_MYSQL:
-        #     cls.db_name = 'nyaav2_tests'
+        #     cls.db_name = 'nyaav3_tests'
         #     db_uri = 'mysql://root:@localhost/{}?charset=utf8mb4'.format(cls.db_name)
         # else:
         #     cls.db_name = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'test.db')

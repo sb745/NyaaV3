@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 from ipaddress import ip_address
 
 import flask
-from werkzeug import secure_filename
+from werkzeug.utils import secure_filename
 
 import sqlalchemy
-from orderedset import OrderedSet
+from orderly_set import OrderlySet
 
 from nyaa import models, utils
 from nyaa.extensions import db
@@ -304,7 +304,7 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
     db.session.flush()
 
     # Store the users trackers
-    trackers = OrderedSet()
+    trackers = OrderlySet()
     announce = torrent_data.torrent_dict.get('announce', b'').decode('ascii')
     if announce:
         trackers.add(announce)
@@ -319,12 +319,12 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
     webseed_list = torrent_data.torrent_dict.get('url-list') or []
     if isinstance(webseed_list, bytes):
         webseed_list = [webseed_list]  # qB doesn't contain a sole url in a list
-    webseeds = OrderedSet(webseed.decode('utf-8') for webseed in webseed_list)
+    webseeds = OrderlySet(webseed.decode('utf-8') for webseed in webseed_list)
 
     # Remove our trackers, maybe? TODO ?
 
     # Search for/Add trackers in DB
-    db_trackers = OrderedSet()
+    db_trackers = OrderlySet()
     for announce in trackers:
         tracker = models.Trackers.by_uri(announce)
 

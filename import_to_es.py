@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Bulk load torents from mysql into elasticsearch `nyaav2` index,
+Bulk load torents from mysql into elasticsearch `nyaav3` index,
 which is assumed to already exist.
 This is a one-shot deal, so you'd either need to complement it
 with a cron job or some binlog-reading thing (TODO)

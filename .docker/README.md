@@ -1,4 +1,6 @@
 # Nyaa on Docker
+> [!CAUTION]
+> Docker deployment is out of date and currently unsupported in NyaaV3.
 
 Docker infrastructure is provided to ease setting up a dev environment
 

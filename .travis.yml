@@ -1,9 +1,8 @@
 language: python
 
-python: "3.7"
+python: "3.13"
 
-dist: xenial
-sudo: required
+dist: jammy
 
 matrix:
   fast_finish: true
@@ -14,7 +13,7 @@ services:
   mysql
 
 before_install:
-  - mysql -u root -e 'CREATE DATABASE nyaav2 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'
+  - mysql -u root -e 'CREATE DATABASE nyaav3 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'
 
 install:
   - pip install -r requirements.txt

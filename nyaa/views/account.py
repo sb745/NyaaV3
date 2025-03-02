@@ -2,6 +2,7 @@ import binascii
 import time
 from datetime import datetime, timedelta
 from ipaddress import ip_address
+from markupsafe import Markup
 
 import flask
 
@@ -24,7 +25,7 @@ def login():
     form = forms.LoginForm(flask.request.form)
     if flask.request.method == 'POST' and form.validate():
         if app.config['MAINTENANCE_MODE'] and not app.config['MAINTENANCE_MODE_LOGINS']:
-            flask.flash(flask.Markup('<strong>Logins are currently disabled.</strong>'), 'danger')
+            flask.flash(Markup('<strong>Logins are currently disabled.</strong>'), 'danger')
             return flask.redirect(flask.url_for('account.login'))
 
         username = form.username.data.strip()
@@ -38,20 +39,21 @@ def login():
             user = models.User.by_email(username)
 
         if not user or password != user.password_hash:
-            flask.flash(flask.Markup(
+            flask.flash(Markup(
                 '<strong>Login failed!</strong> Incorrect username or password.'), 'danger')
             return flask.redirect(flask.url_for('account.login'))
 
         if user.is_banned:
-            ban_reason = models.Ban.banned(user.id, None).first().reason
-            ban_str = ('<strong>Login failed!</strong> You are banned with the '
-                       'reason "{0}" If you believe that this is a mistake, contact '
+            ban = models.Ban.banned(user.id, None).first()
+            ban_reason = ban.reason if ban else '[No reason provided]'
+            ban_str = ('<strong>Login failed!</strong> You are banned. '
+                       'Reason: "{0}" If you believe this is a mistake, contact '
                        'a moderator on IRC.'.format(ban_reason))
-            flask.flash(flask.Markup(ban_str), 'danger')
+            flask.flash(Markup(ban_str), 'danger')
             return flask.redirect(flask.url_for('account.login'))
 
         if user.status != models.UserStatusType.ACTIVE:
-            flask.flash(flask.Markup(
+            flask.flash(Markup(
                 '<strong>Login failed!</strong> Account is not activated.'), 'danger')
             return flask.redirect(flask.url_for('account.login'))
 
@@ -78,7 +80,7 @@ def logout():
     flask.session.modified = False
 
     response = flask.make_response(flask.redirect(redirect_url()))
-    response.set_cookie(app.session_cookie_name, expires=0)
+    response.set_cookie(app.config['SESSION_COOKIE_NAME'], expires=0)
     return response
 
 
@@ -113,7 +115,7 @@ def register():
         db.session.commit()
 
         if app.config['RAID_MODE_LIMIT_REGISTER']:
-            flask.flash(flask.Markup(app.config['RAID_MODE_REGISTER_MESSAGE'] + ' '
+            flask.flash(Markup(app.config['RAID_MODE_REGISTER_MESSAGE'] + ' '
                                      'Please <a href="{}">ask a moderator</a> to manually '
                                      'activate your account <a href="{}">\'{}\'</a>.'
                                      .format(flask.url_for('site.help') + '#irchelp',
@@ -122,7 +124,7 @@ def register():
                                              user.username)), 'warning')
 
         elif models.RangeBan.is_rangebanned(user.registration_ip):
-            flask.flash(flask.Markup('Your IP is blocked from creating new accounts. '
+            flask.flash(Markup('Your IP is blocked from creating new accounts. '
                                      'Please <a href="{}">ask a moderator</a> to manually '
                                      'activate your account <a href="{}">\'{}\'</a>.'
                                      .format(flask.url_for('site.help') + '#irchelp',
@@ -162,7 +164,7 @@ def password_reset(payload=None):
             if user:
                 send_password_reset_request_email(user)
 
-            flask.flash(flask.Markup(
+            flask.flash(Markup(
                 'A password reset request was sent to the provided email, '
                 'if a matching account was found.'), 'info')
             return flask.redirect(flask.url_for('main.home'))
@@ -196,7 +198,7 @@ def password_reset(payload=None):
 
             send_password_reset_email(user)
 
-            flask.flash(flask.Markup('Your password was reset. Log in now.'), 'info')
+            flask.flash(Markup('Your password was reset. Log in now.'), 'info')
             return flask.redirect(flask.url_for('account.login'))
         return flask.render_template('password_reset.html', form=form)
 
@@ -212,25 +214,25 @@ def profile():
     if flask.request.method == 'POST':
         if form.authorized_submit and form.validate():
             user = flask.g.user
-            new_email = form.email.data.strip()
+            new_email = form.email.data.strip() if form.email.data else None
             new_password = form.new_password.data
 
-            if new_email:
+            if new_email and new_email.strip():
                 if form.current_password.data != user.password_hash:
-                    flask.flash(flask.Markup(
+                    flask.flash(Markup(
                         '<strong>Email change failed!</strong> Incorrect password.'), 'danger')
                     return flask.redirect('/profile')
                 user.email = form.email.data
-                flask.flash(flask.Markup(
+                flask.flash(Markup(
                     '<strong>Email successfully changed!</strong>'), 'success')
 
             if new_password:
                 if form.current_password.data != user.password_hash:
-                    flask.flash(flask.Markup(
+                    flask.flash(Markup(
                         '<strong>Password change failed!</strong> Incorrect password.'), 'danger')
                     return flask.redirect('/profile')
                 user.password_hash = form.new_password.data
-                flask.flash(flask.Markup(
+                flask.flash(Markup(
                     '<strong>Password successfully changed!</strong>'), 'success')
             db.session.add(user)
             db.session.commit()
@@ -244,7 +246,7 @@ def profile():
                 db.session.add(preferences)
                 db.session.commit()
             user.preferences.hide_comments = form.hide_comments.data
-            flask.flash(flask.Markup(
+            flask.flash(Markup(
                 '<strong>Preferences successfully changed!</strong>'), 'success')
             db.session.add(user)
             db.session.commit()
