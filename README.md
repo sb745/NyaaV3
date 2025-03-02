@@ -129,7 +129,7 @@ This project is licensed under the GNU General Public License v3.0 (GPL-3.0). Se
 
 ## Disclaimer
 > [!CAUTION]
-> **This project was created as a learning experience, and while it’s a torrent tracker, I can’t control how people choose to use it.**
+> **This project was created as a learning experience, and while it's a torrent tracker, I can't control how people choose to use it.**
 
 By using this software, you're agreeing to a few things:
 - I'm not responsible for any legal issues that might come up from using this tracker, especially if it's used to share copyrighted content without permission.
