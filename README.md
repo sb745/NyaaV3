@@ -1,4 +1,4 @@
-# NyaaV3 [![python](https://img.shields.io/badge/Python-3.13.2-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org) ![Maintenance](https://img.shields.io/maintenance/yes/2025)
+# NyaaV3 [![python](https://img.shields.io/badge/Python-3.13-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org) ![Maintenance](https://img.shields.io/maintenance/yes/2025)
 
 ## Setting up for development
 This project uses Python 3.13. The codebase has been updated from the original Python 3.7 version to use modern Python features and updated dependencies.
@@ -12,12 +12,12 @@ Running Nyaa on Windows may be possible, but it's currently unsupported.
 - Replaced deprecated Flask-Script, orderedset and `flask.Markup` with Flask CLI, orderly-set and markupsafe
 - Implemented mail error handling
 
-### Code Quality:
+### Code Quality
 - Before we get any deeper, remember to follow PEP8 style guidelines and run `python dev.py lint` before committing to see a list of warnings/problems.
     - You may also use `python dev.py fix && python dev.py isort` to automatically fix some of the issues reported by the previous command.
 - Other than PEP8, try to keep your code clean and easy to understand, as well. It's only polite!
 
-### Running Tests
+### Running tests
 The `tests` folder contains tests for the the `nyaa` module and the webserver. To run the tests:
 - Make sure that you are in the Python virtual environment.
 - Run `python dev.py test` while in the repository directory.
