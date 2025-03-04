@@ -41,10 +41,10 @@ pyenv eases the use of different Python versions, and as not all Linux distros o
 - Enable `USE_MYSQL` flag in config.py
 - Install MariaDB by following instructions [here](https://downloads.mariadb.org/mariadb/repositories/)
 - Run the following commands logged in as your root db user (substitute for your own `config.py` values if desired):
-    - `CREATE USER 'test'@'localhost' IDENTIFIED BY 'test123';`
-    - `GRANT ALL PRIVILEGES ON *.* TO 'test'@'localhost';`
-    - `FLUSH PRIVILEGES;`
+    - `CREATE USER 'nyaauser'@'localhost' IDENTIFIED BY 'nyaapass';`
     - `CREATE DATABASE nyaav3 DEFAULT CHARACTER SET utf8 COLLATE utf8_bin;`
+    - `GRANT ALL PRIVILEGES ON nyaav3.* TO 'nyaauser'@'localhost';`
+    - `FLUSH PRIVILEGES;`
 
 ### Finishing up
 - Run `python db_create.py` to create the database and import categories
