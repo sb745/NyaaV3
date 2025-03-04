@@ -48,7 +48,7 @@ pyenv eases the use of different Python versions, and as not all Linux distros o
 
 ### Finishing up
 - Run `python db_create.py` to create the database and import categories
-    - Follow the advice of `db_create.py` and run `python db_migrate.py stamp head` to mark the database version for Alembic
+    - ~~Follow the advice of `db_create.py` and run `python db_migrate.py stamp head` to mark the database version for Alembic~~
 - Start the dev server with `python run.py`
 - When you are finished developing, deactivate your virtualenv with `pyenv deactivate` or `source deactivate` (or just close your shell session)
 
