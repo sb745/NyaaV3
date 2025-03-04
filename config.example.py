@@ -231,3 +231,6 @@ CACHE_THRESHOLD = 8192
 # To actually make this work across multiple worker processes, use redis
 # RATELIMIT_STORAGE_URL="redis://host:port"
 RATELIMIT_KEY_PREFIX="nyaaratelimit_"
+
+# Use this to show the commit hash in the footer (see layout.html)
+# COMMIT_HASH="[enter your commit hash here]";
