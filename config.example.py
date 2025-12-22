@@ -88,7 +88,7 @@ RECAPTCHA_PRIVATE_KEY = '***'
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 if USE_MYSQL:
-    SQLALCHEMY_DATABASE_URI = ('mysql://test:test123@localhost/nyaav3?charset=utf8mb4')
+    SQLALCHEMY_DATABASE_URI = ('mysql://nyaauser:nyaapass@localhost/nyaav3?charset=utf8mb4')
 else:
     SQLALCHEMY_DATABASE_URI = (
         'sqlite:///' + os.path.join(BASE_DIR, 'test.db') + '?check_same_thread=False')
@@ -98,7 +98,7 @@ else:
 ###########
 
 # 'smtp' or 'mailgun'
-MAIL_BACKEND = 'mailgun'
+MAIL_BACKEND = 'smtp'
 MAIL_FROM_ADDRESS = 'Sender Name <sender@domain.com>'
 
 # Mailgun settings
@@ -180,7 +180,7 @@ ES_MAX_SEARCH_RESULT = 1000
 # ES index name generally (nyaa or sukebei)
 ES_INDEX_NAME = SITE_FLAVOR
 # ES hosts
-ES_HOSTS = ['localhost:9200']
+ES_HOSTS = ['http://localhost:9200']
 
 ################
 ## Commenting ##
@@ -232,5 +232,6 @@ CACHE_THRESHOLD = 8192
 # RATELIMIT_STORAGE_URL="redis://host:port"
 RATELIMIT_KEY_PREFIX="nyaaratelimit_"
 
-# Use this to show the commit hash in the footer (see layout.html)
+# The commit hash is automatically shown in the footer if .git folder is present (see layout.html)
+# Use this to manually show the hash
 # COMMIT_HASH="[enter your commit hash here]";

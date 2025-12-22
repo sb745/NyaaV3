@@ -13,12 +13,13 @@ import progressbar
 from elasticsearch import Elasticsearch
 from elasticsearch.client import IndicesClient
 from elasticsearch import helpers
+from sqlalchemy import text
 
 from nyaa import create_app, models
 from nyaa.extensions import db
 
 app = create_app('config')
-es = Elasticsearch(hosts=app.config['ES_HOSTS'], timeout=30)
+es = Elasticsearch(hosts=app.config['ES_HOSTS'], request_timeout=30)
 ic = IndicesClient(es)
 
 def pad_bytes(in_bytes, size):
@@ -98,14 +99,15 @@ FLAVORS = [
 
 # Get binlog status from mysql
 with app.app_context():
-    master_status = db.engine.execute('SHOW MASTER STATUS;').fetchone()
+    with db.engine.begin() as connection:
+        master_status = connection.execute(text('SHOW MASTER STATUS;')).fetchone()
 
     position_json = {
         'log_file': master_status[0],
         'log_pos': master_status[1]
     }
 
-    print('Save the following in the file configured in your ES sync config JSON:')
+    print('Save the following in the file configured in es_sync_config.json:')
     print(json.dumps(position_json))
 
     for flavor, torrent_class in FLAVORS:

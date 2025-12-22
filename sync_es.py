@@ -68,9 +68,9 @@ stats = StatsClient('localhost', 8125, prefix="sync_es")
 SAVE_LOC = config.get('save_loc', "/tmp/pos.json")
 MYSQL_HOST = config.get('mysql_host', '127.0.0.1')
 MYSQL_PORT = config.get('mysql_port', 3306)
-MYSQL_USER = config.get('mysql_user', 'root')
-MYSQL_PW = config.get('mysql_password', 'dunnolol')
-NT_DB = config.get('database', 'nyaav2')
+MYSQL_USER = config.get('mysql_user', 'nyaauser')
+MYSQL_PW = config.get('mysql_password', 'nyaapass')
+NT_DB = config.get('database', 'nyaav3')
 INTERNAL_QUEUE_DEPTH = config.get('internal_queue_depth', 10000)
 ES_CHUNK_SIZE = config.get('es_chunk_size', 10000)
 # seconds since no events happening to flush to es. remember this also
@@ -263,7 +263,7 @@ class EsPoster(ExitingThread):
         self.flush_interval = flush_interval
 
     def run_happy(self):
-        es = Elasticsearch(hosts=app.config['ES_HOSTS'], timeout=30)
+        es = Elasticsearch(hosts=app.config['ES_HOSTS'], request_timeout=30)
 
         last_save = time.time()
         since_last = 0

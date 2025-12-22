@@ -1,13 +1,13 @@
-# NyaaV3 [![python](https://img.shields.io/badge/Python-3.13-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org) ![Maintenance](https://img.shields.io/maintenance/yes/2025)
+# NyaaV3 [![python](https://img.shields.io/badge/Python-3.14-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org) ![Maintenance](https://img.shields.io/maintenance/yes/2025)
 
 ## Setting up for development
-This project uses Python 3.13. The codebase has been updated from the original Python 3.7 version to use modern Python features and updated dependencies.
+This project uses Python 3.14. The codebase has been updated from the original Python 3.7 version to use modern Python features and updated dependencies.
 This guide assumes you are using Linux and are somewhat capable with the commandline.   
 Running Nyaa on Windows may be possible, but it's currently unsupported.
 
 ### Major changes from NyaaV2
-- Updated from Python 3.7 to Python 3.13
-- Updated all dependencies to their latest versions
+- Updated from Python 3.7 to Python 3.14
+- Updated all dependencies
 - Modernized code patterns for Flask 3.0 and SQLAlchemy 2.0
 - Replaced deprecated Flask-Script, orderedset and `flask.Markup` with Flask CLI, orderly-set and markupsafe
 - Implemented mail error handling
@@ -23,13 +23,13 @@ The `tests` folder contains tests for the the `nyaa` module and the webserver. T
 - Run `python dev.py test` while in the repository directory.
 
 ### Setting up Pyenv
-pyenv eases the use of different Python versions, and as not all Linux distros offer 3.13 packages, it's right up our alley.
+pyenv eases the use of different Python versions, and as not all Linux distros offer 3.14 packages, it's right up our alley.
 - Install [dependencies](https://github.com/pyenv/pyenv/wiki/Common-build-problems)
 - Install [pyenv](https://github.com/pyenv/pyenv/blob/master/README.md#installation)
 - Install [pyenv-virtualenv](https://github.com/pyenv/pyenv-virtualenv/blob/master/README.md)
-- Install Python 3.13 with `pyenv` and create a virtualenv for the project:
-    - `pyenv install 3.13.2`
-    - `pyenv virtualenv 3.13.2 nyaa`
+- Install Python 3.14 with `pyenv` and create a virtualenv for the project:
+    - `pyenv install 3.14.2`
+    - `pyenv virtualenv 3.14.2 nyaa`
     - `pyenv activate nyaa`
 - Install dependencies with `pip install -r requirements.txt`
 - Copy `config.example.py` into `config.py`
@@ -59,7 +59,7 @@ Continue below to learn about database migrations and enabling the advanced sear
 ## Database migrations
 > [!WARNING]
 > The database migration feature has been updated but will no longer be supported in NyaaV3. 
-- Database migrations are done with [Flask-Migrate](https://flask-migrate.readthedocs.io/), a wrapper around [Alembic](http://alembic.zzzcomputing.com/en/latest/).
+- Database migrations are done using [Flask-Migrate](https://flask-migrate.readthedocs.io/), a wrapper around [Alembic](http://alembic.zzzcomputing.com/en/latest/).
 - The migration system has been updated to use Flask CLI instead of the deprecated Flask-Script.
 - If someone has made changes in the database schema and included a new migration script:
     - If your database has never been marked by Alembic (you're on a database from before the migrations), run `python db_migrate.py db stamp head` before pulling the new migration script(s).
@@ -77,7 +77,7 @@ Continue below to learn about database migrations and enabling the advanced sear
 ## Setting up and enabling Elasticsearch
 
 ### Installing Elasticsearch
-- Install JDK with `sudo apt-get install openjdk-8-jdk`
+- Install JDK with `sudo apt-get install openjdk-21-jdk`
 - Install Elasticsearch
     - [From packages](https://www.elastic.co/guide/en/elasticsearch/reference/current/deb.html)
         - Enable the service:
@@ -85,6 +85,7 @@ Continue below to learn about database migrations and enabling the advanced sear
             - `sudo systemctl start elasticsearch.service`
     - or [simply extracting the archives and running the files](https://www.elastic.co/guide/en/elasticsearch/reference/current/_installation.html), if you don't feel like permanently installing ES
 - Run `curl -XGET 'localhost:9200'` and make sure ES is running
+    - You may need to set `xpack.security.enabled: false` in your `elasticsearch.yml` file if curl output is empty
 - Install [Kibana](https://www.elastic.co/products/kibana) as a search debug frontend for ES (*optional*)
 
 ### Enabling MySQL Binlogging
@@ -99,7 +100,10 @@ Continue below to learn about database migrations and enabling the advanced sear
 - Copy the example configuration (`es_sync_config.example.json`) as `es_sync_config.json` and adjust options in it to your liking (verify the connection options!)
 - Connect to mysql as root
     - Verify that the result of `SHOW VARIABLES LIKE 'binlog_format';` is `ROW`
-    - Execute `GRANT REPLICATION SLAVE ON *.* TO 'username'@'localhost';` to allow your configured user access to the binlog
+    - Execute `GRANT REPLICATION SLAVE ON *.* TO 'nyaav3'@'localhost';` to allow your configured user access to the binlog and one of the following:
+        - For MySQL: `GRANT REPLICATION CLIENT ON *.* TO 'nyaauser'@'localhost';`
+        - For MariaDB: `GRANT BINLOG MONITOR ON *.* TO 'nyaauser'@'localhost';`
+- Run `./create_es.sh` to create the indices for the torrents: `nyaa` and `sukebei`
 
 ### Setting up ES
 - Run `./create_es.sh` to create the indices for the torrents: `nyaa` and `sukebei`
@@ -116,8 +120,8 @@ However, take note that binglog is not necessary for simple ES testing and devel
 
 ### Setting up sync_es.py
 `sync_es.py` keeps the Elasticsearch indices updated by reading the binlog and pushing the changes to the ES indices.
-- Make sure `es_sync_config.json` is configured with the user you grated the `REPLICATION` permissions
-- Run `import_to_es.py` and copy the outputted JSON into the file specified by `save_loc` in your `es_sync_config.json`
+- Make sure `es_sync_config.json` is configured with the user you granted the `REPLICATION` permissions
+- Run `python import_to_es.py /path/to/file.json` and copy the outputted JSON into the file specified by `save_loc` in your `es_sync_config.json` file
 - Run `sync_es.py` as-is *or*, for actual deployment, set it up as a service and run it, preferably as the system/root
     - Make sure `sync_es.py` runs within the venv with the right dependencies!
 
