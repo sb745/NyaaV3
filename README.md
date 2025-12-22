@@ -7,7 +7,7 @@ Running Nyaa on Windows may be possible, but it's currently unsupported.
 
 ### Major changes from NyaaV2
 - Updated from Python 3.7 to Python 3.14
-- Updated all dependencies to their latest versions
+- Updated all dependencies
 - Modernized code patterns for Flask 3.0 and SQLAlchemy 2.0
 - Replaced deprecated Flask-Script, orderedset and `flask.Markup` with Flask CLI, orderly-set and markupsafe
 - Implemented mail error handling
@@ -77,7 +77,7 @@ Continue below to learn about database migrations and enabling the advanced sear
 ## Setting up and enabling Elasticsearch
 
 ### Installing Elasticsearch
-- Install JDK with `sudo apt-get install openjdk-8-jdk`
+- Install JDK with `sudo apt-get install openjdk-21-jdk`
 - Install Elasticsearch
     - [From packages](https://www.elastic.co/guide/en/elasticsearch/reference/current/deb.html)
         - Enable the service:
@@ -85,6 +85,7 @@ Continue below to learn about database migrations and enabling the advanced sear
             - `sudo systemctl start elasticsearch.service`
     - or [simply extracting the archives and running the files](https://www.elastic.co/guide/en/elasticsearch/reference/current/_installation.html), if you don't feel like permanently installing ES
 - Run `curl -XGET 'localhost:9200'` and make sure ES is running
+    - You may need to set `xpack.security.enabled: false` in your `elasticsearch.yml` file if curl output is empty
 - Install [Kibana](https://www.elastic.co/products/kibana) as a search debug frontend for ES (*optional*)
 
 ### Enabling MySQL Binlogging
@@ -99,7 +100,10 @@ Continue below to learn about database migrations and enabling the advanced sear
 - Copy the example configuration (`es_sync_config.example.json`) as `es_sync_config.json` and adjust options in it to your liking (verify the connection options!)
 - Connect to mysql as root
     - Verify that the result of `SHOW VARIABLES LIKE 'binlog_format';` is `ROW`
-    - Execute `GRANT REPLICATION SLAVE ON *.* TO 'username'@'localhost';` to allow your configured user access to the binlog
+    - Execute `GRANT REPLICATION SLAVE ON *.* TO 'nyaav3'@'localhost';` to allow your configured user access to the binlog and one of the following:
+        - For MySQL: `GRANT REPLICATION CLIENT ON *.* TO 'nyaauser'@'localhost';`
+        - For MariaDB: `GRANT BINLOG MONITOR ON *.* TO 'nyaauser'@'localhost';`
+- Run `./create_es.sh` to create the indices for the torrents: `nyaa` and `sukebei`
 
 ### Setting up ES
 - Run `./create_es.sh` to create the indices for the torrents: `nyaa` and `sukebei`
@@ -116,8 +120,8 @@ However, take note that binglog is not necessary for simple ES testing and devel
 
 ### Setting up sync_es.py
 `sync_es.py` keeps the Elasticsearch indices updated by reading the binlog and pushing the changes to the ES indices.
-- Make sure `es_sync_config.json` is configured with the user you grated the `REPLICATION` permissions
-- Run `import_to_es.py` and copy the outputted JSON into the file specified by `save_loc` in your `es_sync_config.json`
+- Make sure `es_sync_config.json` is configured with the user you granted the `REPLICATION` permissions
+- Run `python import_to_es.py /path/to/file.json` and copy the outputted JSON into the file specified by `save_loc` in your `es_sync_config.json` file
 - Run `sync_es.py` as-is *or*, for actual deployment, set it up as a service and run it, preferably as the system/root
     - Make sure `sync_es.py` runs within the venv with the right dependencies!
 

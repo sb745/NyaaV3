@@ -180,7 +180,7 @@ ES_MAX_SEARCH_RESULT = 1000
 # ES index name generally (nyaa or sukebei)
 ES_INDEX_NAME = SITE_FLAVOR
 # ES hosts
-ES_HOSTS = ['localhost:9200']
+ES_HOSTS = ['http://localhost:9200']
 
 ################
 ## Commenting ##
