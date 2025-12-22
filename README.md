@@ -59,7 +59,7 @@ Continue below to learn about database migrations and enabling the advanced sear
 ## Database migrations
 > [!WARNING]
 > The database migration feature has been updated but will no longer be supported in NyaaV3. 
-- Database migrations are done with [Flask-Migrate](https://flask-migrate.readthedocs.io/), a wrapper around [Alembic](http://alembic.zzzcomputing.com/en/latest/).
+- Database migrations are done using [Flask-Migrate](https://flask-migrate.readthedocs.io/), a wrapper around [Alembic](http://alembic.zzzcomputing.com/en/latest/).
 - The migration system has been updated to use Flask CLI instead of the deprecated Flask-Script.
 - If someone has made changes in the database schema and included a new migration script:
     - If your database has never been marked by Alembic (you're on a database from before the migrations), run `python db_migrate.py db stamp head` before pulling the new migration script(s).
