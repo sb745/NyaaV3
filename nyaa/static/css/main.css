@@ -455,7 +455,8 @@ h6:hover .header-anchor {
 
 /* Dark theme */
 
-body.dark {
+body.dark,
+body.dark .form-control {
 	color: #afafaf;
 }
 
