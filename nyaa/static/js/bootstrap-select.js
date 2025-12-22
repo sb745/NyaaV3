@@ -804,8 +804,10 @@
         title = typeof this.options.title !== 'undefined' ? this.options.title : this.options.noneSelectedText;
       }
 
-      //strip all HTML tags and trim the result, then unescape any escaped tags
-      this.$button.attr('title', htmlUnescape($.trim(title.replace(/<[^>]*>?/g, ''))));
+      //strip all HTML tags in a DOM-safe way and trim the result, then unescape any escaped tags
+      var $tmp = $('<div>').html(title);
+      var plainTitle = $tmp.text();
+      this.$button.attr('title', htmlUnescape($.trim(plainTitle)));
       this.$button.children('.filter-option').html(title);
 
       this.$element.trigger('rendered.bs.select');
