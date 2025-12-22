@@ -14,16 +14,20 @@ __pycache__
 
 # Databases
 *.sql
-test.db
+/test.db
 
 # Webserver
-uwsgi.sock
+/uwsgi.sock
 
 # Application
-install/*
-config.py
+/install/*
+/config.py
+/es_sync_config.json
 /test_torrent_batch
-torrents
+
+# Build Output
+nyaa/static/js/bootstrap-select.min.js
+nyaa/static/js/main.min.js
 
 # Other
 *.swp

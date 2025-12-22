@@ -1,17 +1,20 @@
 import base64
+import os.path
 import re
 from datetime import datetime
 from enum import Enum, IntEnum
 from hashlib import md5
 from ipaddress import ip_address
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import unquote as unquote_url
 from urllib.parse import urlencode
 
 import flask
 from markupsafe import escape as escape_markup
 
-from sqlalchemy import ForeignKeyConstraint, Index
+from sqlalchemy import ForeignKeyConstraint, Index, func, select
 from sqlalchemy.ext import declarative
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy_fulltext import FullText
 from sqlalchemy_utils import ChoiceType, EmailType, PasswordType
 
@@ -29,7 +32,7 @@ if config['USE_MYSQL']:
     COL_UTF8MB4_BIN = 'utf8mb4_bin'
     COL_ASCII_GENERAL_CI = 'ascii_general_ci'
 else:
-    BinaryType = db.Binary
+    BinaryType = db.LargeBinary
     TextType = db.String
     MediumBlobType = db.BLOB
     COL_UTF8_GENERAL_CI = 'NOCASE'
@@ -46,23 +49,29 @@ class DeclarativeHelperBase(object):
         __tablename__ and providing class methods for renaming references. '''
     # See http://docs.sqlalchemy.org/en/latest/orm/extensions/declarative/api.html
 
-    __tablename_base__ = None
-    __flavor__ = None
+    __tablename_base__: Optional[str] = None
+    __flavor__: Optional[str] = None
 
     @classmethod
-    def _table_prefix_string(cls):
+    def _table_prefix_string(cls) -> str:
+        if cls.__flavor__ is None:
+            raise ValueError("__flavor__ must be set")
         return cls.__flavor__.lower() + '_'
 
     @classmethod
-    def _table_prefix(cls, table_name):
+    def _table_prefix(cls, table_name: str) -> str:
         return cls._table_prefix_string() + table_name
 
     @classmethod
-    def _flavor_prefix(cls, table_name):
+    def _flavor_prefix(cls, table_name: str) -> str:
+        if cls.__flavor__ is None:
+            raise ValueError("__flavor__ must be set")
         return cls.__flavor__ + table_name
 
     @declarative.declared_attr
-    def __tablename__(cls):
+    def __tablename__(cls) -> str:
+        if cls.__tablename_base__ is None:
+            raise ValueError("__tablename_base__ must be set")
         return cls._table_prefix(cls.__tablename_base__)
 
 
@@ -70,22 +79,22 @@ class FlagProperty(object):
     ''' This class will act as a wrapper between the given flag and the class's
         flag collection. '''
 
-    def __init__(self, flag, flags_attr='flags'):
+    def __init__(self, flag: int, flags_attr: str = 'flags'):
         self._flag = flag
         self._flags_attr_name = flags_attr
 
-    def _get_flags(self, instance):
+    def _get_flags(self, instance: Any) -> int:
         return getattr(instance, self._flags_attr_name)
 
-    def _set_flags(self, instance, value):
+    def _set_flags(self, instance: Any, value: int) -> None:
         return setattr(instance, self._flags_attr_name, value)
 
-    def __get__(self, instance, owner_class):
+    def __get__(self, instance: Any, owner_class: Any) -> bool:
         if instance is None:
             raise AttributeError()
         return bool(self._get_flags(instance) & self._flag)
 
-    def __set__(self, instance, value):
+    def __set__(self, instance: Any, value: bool) -> None:
         new_flags = (self._get_flags(instance) & ~self._flag) | (bool(value) and self._flag)
         self._set_flags(instance, new_flags)
 
@@ -99,6 +108,7 @@ class TorrentFlags(IntEnum):
     COMPLETE = 16
     DELETED = 32
     BANNED = 64
+    COMMENT_LOCKED = 128
 
 
 class TorrentBase(DeclarativeHelperBase):
@@ -121,7 +131,7 @@ class TorrentBase(DeclarativeHelperBase):
         # Even though this is same for both tables, declarative requires this
         return db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
-    uploader_ip = db.Column(db.Binary(length=16), default=None, nullable=True)
+    uploader_ip = db.Column(db.LargeBinary(length=16), default=None, nullable=True)
     has_torrent = db.Column(db.Boolean, nullable=False, default=False)
 
     comment_count = db.Column(db.Integer, default=0, nullable=False, index=True)
@@ -171,11 +181,6 @@ class TorrentBase(DeclarativeHelperBase):
                                primaryjoin=join_sql.format(cls.__flavor__))
 
     @declarative.declared_attr
-    def info(cls):
-        return db.relationship(cls._flavor_prefix('TorrentInfo'), uselist=False,
-                               cascade="all, delete-orphan", back_populates='torrent')
-
-    @declarative.declared_attr
     def filelist(cls):
         return db.relationship(cls._flavor_prefix('TorrentFilelist'), uselist=False,
                                cascade="all, delete-orphan", back_populates='torrent')
@@ -189,7 +194,7 @@ class TorrentBase(DeclarativeHelperBase):
     @declarative.declared_attr
     def trackers(cls):
         return db.relationship(cls._flavor_prefix('TorrentTrackers'), uselist=True,
-                               cascade="all, delete-orphan", lazy='select',
+                               cascade="all, delete-orphan",
                                order_by=cls._flavor_prefix('TorrentTrackers.order'))
 
     @declarative.declared_attr
@@ -200,9 +205,22 @@ class TorrentBase(DeclarativeHelperBase):
     def __repr__(self):
         return '<{0} #{1.id} \'{1.display_name}\' {1.filesize}b>'.format(type(self).__name__, self)
 
-    def update_comment_count(self):
-        self.comment_count = Comment.query.filter_by(torrent_id=self.id).count()
+    def update_comment_count(self) -> int:
+        """Update the comment count for this torrent and return the new count."""
+        stmt = select(func.count(Comment.id)).filter_by(torrent_id=self.id)
+        result = db.session.execute(stmt).scalar_one_or_none() or 0
+        self.comment_count = result
         return self.comment_count
+
+    @classmethod
+    def update_comment_count_db(cls, torrent_id: int) -> None:
+        """Update the comment count in the database for the given torrent ID."""
+        stmt = select(func.count(Comment.id)).filter_by(torrent_id=torrent_id)
+        count = db.session.execute(stmt).scalar_one_or_none() or 0
+        
+        # Use the new update() style
+        stmt = db.update(cls).filter_by(id=torrent_id).values(comment_count=count)
+        db.session.execute(stmt)
 
     @property
     def created_utc_timestamp(self):
@@ -225,9 +243,17 @@ class TorrentBase(DeclarativeHelperBase):
             invalid_url_characters = '<>"'
             # Check if url contains invalid characters
             if not any(c in url for c in invalid_url_characters):
-                return '<a href="{0}">{1}</a>'.format(url, escape_markup(unquote_url(url)))
+                return('<a rel="noopener noreferrer nofollow" '
+                       'href="{0}">{1}</a>'.format(url, escape_markup(unquote_url(url))))
         # Escaped
         return escape_markup(self.information)
+
+    @property
+    def info_dict_path(self):
+        ''' Returns a path to the info_dict file in form of 'info_dicts/aa/bb/aabbccddee...' '''
+        info_hash = self.info_hash_as_hex
+        return os.path.join(app.config['BASE_DIR'], 'info_dicts',
+                            info_hash[0:2], info_hash[2:4], info_hash)
 
     @property
     def info_hash_as_b32(self):
@@ -255,19 +281,25 @@ class TorrentBase(DeclarativeHelperBase):
     trusted = FlagProperty(TorrentFlags.TRUSTED)
     remake = FlagProperty(TorrentFlags.REMAKE)
     complete = FlagProperty(TorrentFlags.COMPLETE)
+    comment_locked = FlagProperty(TorrentFlags.COMMENT_LOCKED)
 
     # Class methods
 
     @classmethod
-    def by_id(cls, id):
-        return cls.query.get(id)
+    def by_id(cls, id: int) -> Optional['TorrentBase']:
+        """Get a torrent by its ID."""
+        stmt = select(cls).filter_by(id=id)
+        return db.session.execute(stmt).scalar_one_or_none()
 
     @classmethod
-    def by_info_hash(cls, info_hash):
-        return cls.query.filter_by(info_hash=info_hash).first()
+    def by_info_hash(cls, info_hash: bytes) -> Optional['TorrentBase']:
+        """Get a torrent by its info hash."""
+        stmt = select(cls).filter_by(info_hash=info_hash)
+        return db.session.execute(stmt).scalar_one_or_none()
 
     @classmethod
-    def by_info_hash_hex(cls, info_hash_hex):
+    def by_info_hash_hex(cls, info_hash_hex: str) -> Optional['TorrentBase']:
+        """Get a torrent by its hex-encoded info hash."""
         info_hash_bytes = bytearray.fromhex(info_hash_hex)
         return cls.by_info_hash(info_hash_bytes)
 
@@ -288,22 +320,6 @@ class TorrentFilelistBase(DeclarativeHelperBase):
     def torrent(cls):
         return db.relationship(cls._flavor_prefix('Torrent'), uselist=False,
                                back_populates='filelist')
-
-
-class TorrentInfoBase(DeclarativeHelperBase):
-    __tablename_base__ = 'torrents_info'
-
-    __table_args__ = {'mysql_row_format': 'COMPRESSED'}
-
-    @declarative.declared_attr
-    def torrent_id(cls):
-        return db.Column(db.Integer, db.ForeignKey(
-            cls._table_prefix('torrents.id'), ondelete="CASCADE"), primary_key=True)
-    info_dict = db.Column(MediumBlobType, nullable=True)
-
-    @declarative.declared_attr
-    def torrent(cls):
-        return db.relationship(cls._flavor_prefix('Torrent'), uselist=False, back_populates='info')
 
 
 class StatisticBase(DeclarativeHelperBase):
@@ -335,8 +351,10 @@ class Trackers(db.Model):
     disabled = db.Column(db.Boolean, nullable=False, default=False)
 
     @classmethod
-    def by_uri(cls, uri):
-        return cls.query.filter_by(uri=uri).first()
+    def by_uri(cls, uri: str) -> Optional['Trackers']:
+        """Get a tracker by its URI."""
+        stmt = select(cls).filter_by(uri=uri)
+        return db.session.execute(stmt).scalar_one_or_none()
 
 
 class TorrentTrackersBase(DeclarativeHelperBase):
@@ -359,8 +377,10 @@ class TorrentTrackersBase(DeclarativeHelperBase):
         return db.relationship('Trackers', uselist=False, lazy='joined')
 
     @classmethod
-    def by_torrent_id(cls, torrent_id):
-        return cls.query.filter_by(torrent_id=torrent_id).order_by(cls.order.desc())
+    def by_torrent_id(cls, torrent_id: int) -> List['TorrentTrackersBase']:
+        """Get all trackers for a torrent, ordered by their order field."""
+        stmt = select(cls).filter_by(torrent_id=torrent_id).order_by(cls.order.desc())
+        return db.session.execute(stmt).scalars().all()
 
 
 class MainCategoryBase(DeclarativeHelperBase):
@@ -385,8 +405,10 @@ class MainCategoryBase(DeclarativeHelperBase):
         return '_'.join(str(x) for x in self.get_category_ids())
 
     @classmethod
-    def by_id(cls, id):
-        return cls.query.get(id)
+    def by_id(cls, id: int) -> Optional['MainCategoryBase']:
+        """Get a main category by its ID."""
+        stmt = select(cls).filter_by(id=id)
+        return db.session.execute(stmt).scalar_one_or_none()
 
 
 class SubCategoryBase(DeclarativeHelperBase):
@@ -414,8 +436,10 @@ class SubCategoryBase(DeclarativeHelperBase):
         return '_'.join(str(x) for x in self.get_category_ids())
 
     @classmethod
-    def by_category_ids(cls, main_cat_id, sub_cat_id):
-        return cls.query.get((sub_cat_id, main_cat_id))
+    def by_category_ids(cls, main_cat_id: int, sub_cat_id: int) -> Optional['SubCategoryBase']:
+        """Get a subcategory by its main category ID and subcategory ID."""
+        stmt = select(cls).filter_by(id=sub_cat_id, main_category_id=main_cat_id)
+        return db.session.execute(stmt).scalar_one_or_none()
 
 
 class CommentBase(DeclarativeHelperBase):
@@ -440,6 +464,11 @@ class CommentBase(DeclarativeHelperBase):
     def user(cls):
         return db.relationship('User', uselist=False,
                                back_populates=cls._table_prefix('comments'), lazy="joined")
+
+    @declarative.declared_attr
+    def torrent(cls):
+        return db.relationship(cls._flavor_prefix('Torrent'), uselist=False,
+                               back_populates='comments')
 
     def __repr__(self):
         return '<Comment %r>' % self.id
@@ -491,7 +520,8 @@ class User(db.Model):
 
     created_time = db.Column(db.DateTime(timezone=False), default=datetime.utcnow)
     last_login_date = db.Column(db.DateTime(timezone=False), default=None, nullable=True)
-    last_login_ip = db.Column(db.Binary(length=16), default=None, nullable=True)
+    last_login_ip = db.Column(db.LargeBinary(length=16), default=None, nullable=True)
+    registration_ip = db.Column(db.LargeBinary(length=16), default=None, nullable=True)
 
     nyaa_torrents = db.relationship('NyaaTorrent', back_populates='user', lazy='dynamic')
     nyaa_comments = db.relationship('NyaaComment', back_populates='user', lazy='dynamic')
@@ -500,6 +530,8 @@ class User(db.Model):
     sukebei_comments = db.relationship('SukebeiComment', back_populates='user', lazy='dynamic')
 
     bans = db.relationship('Ban', uselist=True, foreign_keys='Ban.user_id')
+
+    preferences = db.relationship('UserPreferences', back_populates='user', uselist=False)
 
     def __init__(self, username, email, password):
         self.username = username
@@ -522,19 +554,27 @@ class User(db.Model):
         return all(checks)
 
     def gravatar_url(self):
-        # from http://en.gravatar.com/site/implement/images/python/
-        params = {
-            # Image size (https://en.gravatar.com/site/implement/images/#size)
-            's': 120,
-            # Default image (https://en.gravatar.com/site/implement/images/#default-image)
-            'd': flask.url_for('static', filename='img/avatar/default.png', _external=True),
-            # Image rating (https://en.gravatar.com/site/implement/images/#rating)
-            # Nyaa: PG-rated, Sukebei: X-rated
-            'r': 'pg' if app.config['SITE_FLAVOR'] == 'nyaa' else 'x',
-        }
-        # construct the url
-        return 'https://www.gravatar.com/avatar/{}?{}'.format(
-            md5(self.email.encode('utf-8').lower()).hexdigest(), urlencode(params))
+        if 'DEFAULT_GRAVATAR_URL' in app.config:
+            default_url = app.config['DEFAULT_GRAVATAR_URL']
+        else:
+            default_url = flask.url_for('static', filename='img/avatar/default.png',
+                                        _external=True)
+        if app.config['ENABLE_GRAVATAR']:
+            # from http://en.gravatar.com/site/implement/images/python/
+            params = {
+                # Image size (https://en.gravatar.com/site/implement/images/#size)
+                's': 120,
+                # Default image (https://en.gravatar.com/site/implement/images/#default-image)
+                'd': default_url,
+                # Image rating (https://en.gravatar.com/site/implement/images/#rating)
+                # Nyaa: PG-rated, Sukebei: X-rated
+                'r': 'pg' if app.config['SITE_FLAVOR'] == 'nyaa' else 'x',
+            }
+            # construct the url
+            return 'https://www.gravatar.com/avatar/{}?{}'.format(
+                md5(self.email.encode('utf-8').lower()).hexdigest(), urlencode(params))
+        else:
+            return default_url
 
     @property
     def userlevel_str(self):
@@ -578,23 +618,32 @@ class User(db.Model):
         if self.last_login_ip:
             return str(ip_address(self.last_login_ip))
 
-    @classmethod
-    def by_id(cls, id):
-        return cls.query.get(id)
+    @property
+    def reg_ip_string(self):
+        if self.registration_ip:
+            return str(ip_address(self.registration_ip))
 
     @classmethod
-    def by_username(cls, username):
+    def by_id(cls, id: int) -> Optional['User']:
+        """Get a user by their ID."""
+        stmt = select(cls).filter_by(id=id)
+        return db.session.execute(stmt).scalar_one_or_none()
+
+    @classmethod
+    def by_username(cls, username: str) -> Optional['User']:
+        """Get a user by their username."""
         def isascii(s): return len(s) == len(s.encode())
         if not isascii(username):
             return None
 
-        user = cls.query.filter_by(username=username).first()
-        return user
+        stmt = select(cls).filter_by(username=username)
+        return db.session.execute(stmt).scalar_one_or_none()
 
     @classmethod
-    def by_email(cls, email):
-        user = cls.query.filter_by(email=email).first()
-        return user
+    def by_email(cls, email: str) -> Optional['User']:
+        """Get a user by their email."""
+        stmt = select(cls).filter_by(email=email)
+        return db.session.execute(stmt).scalar_one_or_none()
 
     @classmethod
     def by_username_or_email(cls, username_or_email):
@@ -617,6 +666,10 @@ class User(db.Model):
         return self.status == UserStatusType.BANNED
 
     @property
+    def is_active(self):
+        return self.status != UserStatusType.INACTIVE
+
+    @property
     def age(self):
         '''Account age in seconds'''
         return (datetime.utcnow() - self.created_time).total_seconds()
@@ -625,6 +678,47 @@ class User(db.Model):
     def created_utc_timestamp(self):
         ''' Returns a UTC POSIX timestamp, as seconds '''
         return (self.created_time - UTC_EPOCH).total_seconds()
+
+    @property
+    def satisfies_trusted_reqs(self) -> bool:
+        """Check if the user meets the requirements to be trusted."""
+        num_total = 0
+        downloads_total = 0
+        for ts_flavor, t_flavor in ((NyaaStatistic, NyaaTorrent),
+                                    (SukebeiStatistic, SukebeiTorrent)):
+            # Count uploads that aren't remakes
+            stmt = select(func.count(t_flavor.id)).\
+                filter(t_flavor.user == self).\
+                filter(t_flavor.flags.op('&')(int(TorrentFlags.REMAKE)).is_(False))
+            uploads = db.session.execute(stmt).scalar_one_or_none() or 0
+            
+            # Sum download counts for user's torrents that aren't remakes
+            stmt = select(func.sum(ts_flavor.download_count)).\
+                join(t_flavor).\
+                filter(t_flavor.user == self).\
+                filter(t_flavor.flags.op('&')(int(TorrentFlags.REMAKE)).is_(False))
+            dls = db.session.execute(stmt).scalar_one_or_none() or 0
+            
+            num_total += uploads
+            downloads_total += dls
+            
+        return (num_total >= config['TRUSTED_MIN_UPLOADS'] and
+                downloads_total >= config['TRUSTED_MIN_DOWNLOADS'])
+
+
+class UserPreferences(db.Model):
+    __tablename__ = 'user_preferences'
+
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+
+    def __init__(self, user_id):
+        self.user_id = user_id
+
+    def __repr__(self):
+        return '<UserPreferences %r>' % self.user_id
+
+    user = db.relationship('User', back_populates='preferences')
+    hide_comments = db.Column(db.Boolean, nullable=False, default=False)
 
 
 class AdminLogBase(DeclarativeHelperBase):
@@ -656,7 +750,8 @@ class AdminLogBase(DeclarativeHelperBase):
 
     @classmethod
     def all_logs(cls):
-        return cls.query
+        """Get a query for all admin logs."""
+        return db.session.query(cls)
 
 
 class ReportStatus(IntEnum):
@@ -705,17 +800,26 @@ class ReportBase(DeclarativeHelperBase):
         return (self.created_time - UTC_EPOCH).total_seconds()
 
     @classmethod
-    def by_id(cls, id):
-        return cls.query.get(id)
+    def by_id(cls, id: int) -> Optional['ReportBase']:
+        """Get a report by its ID."""
+        stmt = select(cls).filter_by(id=id)
+        return db.session.execute(stmt).scalar_one_or_none()
 
     @classmethod
-    def not_reviewed(cls, page):
-        reports = cls.query.filter_by(status=0).paginate(page=page, per_page=20)
-        return reports
+    def not_reviewed(cls, page: int):
+        """Get paginated reports that haven't been reviewed yet."""
+        # Note: paginate is a Flask-SQLAlchemy extension method, not standard SQLAlchemy
+        # We'll keep using it for now, but it should be updated to use the new pagination API
+        # in a future update
+        stmt = select(cls).filter_by(status=0)
+        return db.paginate(stmt, page=page, per_page=20)
 
     @classmethod
-    def remove_reviewed(cls, id):
-        return cls.query.filter(cls.torrent_id == id, cls.status == 0).delete()
+    def remove_reviewed(cls, id: int) -> int:
+        """Remove all reports for a torrent that haven't been reviewed yet."""
+        stmt = db.delete(cls).filter(cls.torrent_id == id, cls.status == 0)
+        result = db.session.execute(stmt)
+        return result.rowcount
 
 
 class Ban(db.Model):
@@ -725,7 +829,7 @@ class Ban(db.Model):
     created_time = db.Column(db.DateTime(timezone=False), default=datetime.utcnow)
     admin_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    user_ip = db.Column(db.Binary(length=16), nullable=True)
+    user_ip = db.Column(db.LargeBinary(length=16), nullable=True)
     reason = db.Column(db.String(length=2048), nullable=False)
 
     admin = db.relationship('User', uselist=False, lazy='joined', foreign_keys=[admin_id])
@@ -746,21 +850,154 @@ class Ban(db.Model):
 
     @classmethod
     def all_bans(cls):
-        return cls.query
+        """Get a query for all bans."""
+        return db.session.query(cls)
 
     @classmethod
-    def by_id(cls, id):
-        return cls.query.get(id)
+    def by_id(cls, id: int) -> Optional['Ban']:
+        """Get a ban by its ID."""
+        stmt = select(cls).filter_by(id=id)
+        return db.session.execute(stmt).scalar_one_or_none()
 
     @classmethod
-    def banned(cls, user_id, user_ip):
+    def banned(cls, user_id: Optional[int], user_ip: Optional[bytes]):
+        """Check if a user or IP is banned."""
         if user_id:
             if user_ip:
-                return cls.query.filter((cls.user_id == user_id) | (cls.user_ip == user_ip))
-            return cls.query.filter(cls.user_id == user_id)
+                stmt = select(cls).filter((cls.user_id == user_id) | (cls.user_ip == user_ip))
+                return db.session.execute(stmt).scalars().all()
+            stmt = select(cls).filter(cls.user_id == user_id)
+            return db.session.execute(stmt).scalars().all()
         if user_ip:
-            return cls.query.filter(cls.user_ip == user_ip)
+            stmt = select(cls).filter(cls.user_ip == user_ip)
+            return db.session.execute(stmt).scalars().all()
         return None
+
+
+class TrackerApiBase(DeclarativeHelperBase):
+    __tablename_base__ = 'trackerapi'
+
+    id = db.Column(db.Integer, primary_key=True)
+    info_hash = db.Column(BinaryType(length=20), nullable=False)
+    method = db.Column(db.String(length=255), nullable=False)
+    # Methods = insert, remove
+
+    def __init__(self, info_hash, method):
+        self.info_hash = info_hash
+        self.method = method
+
+
+class RangeBan(db.Model):
+    __tablename__ = 'rangebans'
+
+    id = db.Column(db.Integer, primary_key=True)
+    _cidr_string = db.Column('cidr_string', db.String(length=18), nullable=False)
+    masked_cidr = db.Column(db.BigInteger, nullable=False,
+                            index=True)
+    mask = db.Column(db.BigInteger, nullable=False, index=True)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    # If this rangeban may be automatically cleared once it becomes
+    # out of date, set this column to the creation time of the ban.
+    # None (or NULL in the db) is understood as the ban being permanent.
+    temp = db.Column(db.DateTime(timezone=False), nullable=True, default=None)
+
+    @property
+    def cidr_string(self):
+        return self._cidr_string
+
+    @cidr_string.setter
+    def cidr_string(self, s):
+        subnet, masked_bits = s.split('/')
+        subnet_b = ip_address(subnet).packed
+        self.mask = (1 << 32) - (1 << (32 - int(masked_bits)))
+        self.masked_cidr = int.from_bytes(subnet_b, 'big') & self.mask
+        self._cidr_string = s
+
+    @classmethod
+    def is_rangebanned(cls, ip: bytes) -> bool:
+        """Check if an IP is within a banned range."""
+        if len(ip) > 4:
+            raise NotImplementedError("IPv6 is unsupported.")
+        elif len(ip) < 4:
+            raise ValueError("Not an IP address.")
+        ip_int = int.from_bytes(ip, 'big')
+        stmt = select(cls).filter(cls.mask.op('&')(ip_int) == cls.masked_cidr,
+                                 cls.enabled)
+        count = db.session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
+        return count > 0
+
+
+class TrustedApplicationStatus(IntEnum):
+    # If you change these, don't forget to change is_closed in TrustedApplication
+    NEW = 0
+    REVIEWED = 1
+    ACCEPTED = 2
+    REJECTED = 3
+
+
+class TrustedApplication(db.Model):
+    __tablename__ = 'trusted_applications'
+
+    id = db.Column(db.Integer, primary_key=True)
+    submitter_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    created_time = db.Column(db.DateTime(timezone=False), default=datetime.utcnow)
+    closed_time = db.Column(db.DateTime(timezone=False))
+    why_want = db.Column(db.String(length=4000), nullable=False)
+    why_give = db.Column(db.String(length=4000), nullable=False)
+    status = db.Column(ChoiceType(TrustedApplicationStatus, impl=db.Integer()), nullable=False,
+                       default=TrustedApplicationStatus.NEW)
+    reviews = db.relationship('TrustedReview', backref='trusted_applications')
+    submitter = db.relationship('User', uselist=False, lazy='joined', foreign_keys=[submitter_id])
+
+    @hybrid_property
+    def is_closed(self):
+        # We can't use the attribute names from TrustedApplicationStatus in an or here because of
+        # SQLAlchemy jank. It'll generate the wrong query.
+        return self.status > 1
+
+    @hybrid_property
+    def is_new(self):
+        return self.status == TrustedApplicationStatus.NEW
+
+    @hybrid_property
+    def is_reviewed(self):
+        return self.status == TrustedApplicationStatus.REVIEWED
+
+    @hybrid_property
+    def is_rejected(self):
+        return self.status == TrustedApplicationStatus.REJECTED
+
+    @property
+    def created_utc_timestamp(self):
+        ''' Returns a UTC POSIX timestamp, as seconds '''
+        return (self.created_time - UTC_EPOCH).total_seconds()
+
+    @classmethod
+    def by_id(cls, id: int) -> Optional['TrustedApplication']:
+        """Get a trusted application by its ID."""
+        stmt = select(cls).filter_by(id=id)
+        return db.session.execute(stmt).scalar_one_or_none()
+
+
+class TrustedRecommendation(IntEnum):
+    ACCEPT = 0
+    REJECT = 1
+    ABSTAIN = 2
+
+
+class TrustedReview(db.Model):
+    __tablename__ = 'trusted_reviews'
+
+    id = db.Column(db.Integer, primary_key=True)
+    reviewer_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    app_id = db.Column(db.Integer, db.ForeignKey('trusted_applications.id'), nullable=False)
+    created_time = db.Column(db.DateTime(timezone=False), default=datetime.utcnow)
+    comment = db.Column(db.String(length=4000), nullable=False)
+    recommendation = db.Column(ChoiceType(TrustedRecommendation, impl=db.Integer()),
+                               nullable=False)
+    reviewer = db.relationship('User', uselist=False, lazy='joined', foreign_keys=[reviewer_id])
+    application = db.relationship('TrustedApplication', uselist=False, lazy='joined',
+                                  foreign_keys=[app_id])
 
 
 # Actually declare our site-specific classes
@@ -798,15 +1035,6 @@ class NyaaTorrentFilelist(TorrentFilelistBase, db.Model):
 
 
 class SukebeiTorrentFilelist(TorrentFilelistBase, db.Model):
-    __flavor__ = 'Sukebei'
-
-
-# TorrentInfo
-class NyaaTorrentInfo(TorrentInfoBase, db.Model):
-    __flavor__ = 'Nyaa'
-
-
-class SukebeiTorrentInfo(TorrentInfoBase, db.Model):
     __flavor__ = 'Sukebei'
 
 
@@ -873,11 +1101,19 @@ class SukebeiReport(ReportBase, db.Model):
     __flavor__ = 'Sukebei'
 
 
+# TrackerApi
+class NyaaTrackerApi(TrackerApiBase, db.Model):
+    __flavor__ = 'Nyaa'
+
+
+class SukebeiTrackerApi(TrackerApiBase, db.Model):
+    __flavor__ = 'Sukebei'
+
+
 # Choose our defaults for models.Torrent etc
 if config['SITE_FLAVOR'] == 'nyaa':
     Torrent = NyaaTorrent
     TorrentFilelist = NyaaTorrentFilelist
-    TorrentInfo = NyaaTorrentInfo
     Statistic = NyaaStatistic
     TorrentTrackers = NyaaTorrentTrackers
     MainCategory = NyaaMainCategory
@@ -886,11 +1122,11 @@ if config['SITE_FLAVOR'] == 'nyaa':
     AdminLog = NyaaAdminLog
     Report = NyaaReport
     TorrentNameSearch = NyaaTorrentNameSearch
+    TrackerApi = NyaaTrackerApi
 
 elif config['SITE_FLAVOR'] == 'sukebei':
     Torrent = SukebeiTorrent
     TorrentFilelist = SukebeiTorrentFilelist
-    TorrentInfo = SukebeiTorrentInfo
     Statistic = SukebeiStatistic
     TorrentTrackers = SukebeiTorrentTrackers
     MainCategory = SukebeiMainCategory
@@ -899,3 +1135,4 @@ elif config['SITE_FLAVOR'] == 'sukebei':
     AdminLog = SukebeiAdminLog
     Report = SukebeiReport
     TorrentNameSearch = SukebeiTorrentNameSearch
+    TrackerApi = SukebeiTrackerApi

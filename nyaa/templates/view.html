@@ -74,7 +74,7 @@
 
 	<div class="panel-footer clearfix">
 		{% if torrent.has_torrent %}<a href="{{ url_for('torrents.download', torrent_id=torrent.id )}}"><i class="fa fa-download fa-fw"></i>Download Torrent</a> or {% endif %}<a href="{{ torrent.magnet_uri }}" class="card-footer-item"><i class="fa fa-magnet fa-fw"></i>Magnet</a>
-		{% if g.user %}
+		{% if g.user and g.user.age > config['RATELIMIT_ACCOUNT_AGE'] %}
 		<button type="button" class="btn btn-xs btn-danger pull-right" data-toggle="modal" data-target="#reportModal">
 			Report
 		</button>
@@ -93,6 +93,7 @@
 	</div>
 </div>
 
+{% cache 86400, "filelist", torrent.info_hash_as_hex %}
 {% if files and files.__len__() <= config.MAX_FILES_VIEW %}
 <div class="panel panel-default">
 	<div class="panel-heading">
@@ -133,13 +134,17 @@
 	</div>
 </div>
 {% endif %}
+{% endcache %}
 
 <div id="comments" class="panel panel-default">
 	<div class="panel-heading">
+		<a data-toggle="collapse" href="#collapse-comments" role="button" aria-expanded="{% if g.user and g.user.preferences.hide_comments %}false{% else %}true{% endif %}" aria-controls="collapse-comments">
 		<h3 class="panel-title">
-			Comments - {{ comments | length }}
+			Comments - {{ torrent.comment_count }}
 		</h3>
+		</a>
 	</div>
+	<div class="collapse {% if g.user and g.user.preferences.hide_comments %}{% else %}in{% endif %}" id="collapse-comments">
 	{% for comment in comments %}
 	<div class="panel panel-default comment-panel" id="com-{{ loop.index }}">
 		<div class="panel-body">
@@ -159,25 +164,42 @@
 					<small data-timestamp-swap data-timestamp-title data-timestamp="{{ comment.edited_utc_timestamp }}" title="{{ comment.edited_time }}">(edited)</small>
 					{% endif %}
 					<div class="comment-actions">
-						{% if g.user.id == comment.user_id and not comment.editing_limit_exceeded %}
+						{% if g.user.id == comment.user_id and not comment.editing_limit_exceeded and (not torrent.comment_locked or comment_form) %}
 						<button class="btn btn-xs edit-comment" title="Edit"{% if config.EDITING_TIME_LIMIT %} data-until="{{ comment.editable_until|int }}"{% endif %}>Edit</button>
 						{% endif %}
-						{% if g.user.is_moderator or g.user.id == comment.user_id %}
+						{% if g.user.is_superadmin or (g.user.id == comment.user_id and not torrent.comment_locked and not comment.editing_limit_exceeded) %}
 						<form class="delete-comment-form" action="{{ url_for('torrents.delete_comment', torrent_id=torrent.id, comment_id=comment.id) }}" method="POST">
 							<button name="submit" type="submit" class="btn btn-danger btn-xs" title="Delete">Delete</button>
 						</form>
 						{% endif %}
 					</div>
 				</div>
-				<div class="row">
+				<div class="row comment-body">
 					{# Escape newlines into html entities because CF strips blank newlines #}
 					<div markdown-text class="comment-content" id="torrent-comment{{ comment.id }}">{{- comment.text | escape | replace('\r\n', '\n') | replace('\n', '&#10;'|safe) -}}</div>
-					{% if g.user.id == comment.user_id %}
+					{% if g.user.id == comment.user_id and comment_form %}
 					<form class="edit-comment-box" action="{{ url_for('torrents.edit_comment', torrent_id=torrent.id, comment_id=comment.id) }}" method="POST">
 						{{ comment_form.csrf_token }}
 						<div class="form-group">
 							<textarea class="form-control" name="comment" autofocus>{{- comment.text | escape | replace('\r\n', '\n') | replace('\n', '&#10;'|safe) -}}</textarea>
 						</div>
+						{% if config.USE_RECAPTCHA and g.user.age < config['ACCOUNT_RECAPTCHA_AGE'] %}
+						<div class="row">
+							<div class="col-md-4">
+								{% if comment_form.recaptcha.errors %}
+								<div class="alert alert-danger">
+									<p><strong>CAPTCHA error:</strong></p>
+									<ul>
+										{% for error in comment_form.recaptcha.errors %}
+										<li>{{ error }}</li>
+										{% endfor %}
+									</ul>
+								</div>
+								{% endif %}
+								{{ comment_form.recaptcha }}
+							</div>
+						</div>
+						{% endif %}
 						<input type="submit" value="Submit" class="btn btn-success btn-sm">
 						<button class="btn btn-sm edit-comment" title="Cancel">Cancel</button>
 						<span class="edit-error text-danger"></span>
@@ -190,16 +212,50 @@
 	</div>
 
 	{% endfor %}
+	{% if torrent.comment_locked %}
+	<div class="alert alert-warning">
+		<p>
+			<i class="fa fa-lock" aria-hidden="true"></i>
+			Comments have been locked.
+		</p>
+	</div>
+	{% endif %}
 	{% if comment_form %}
 	<form class="comment-box" method="POST">
 		{{ comment_form.csrf_token }}
-		{{ render_field(comment_form.comment, class_='form-control') }}
-		<input type="submit" value="Submit" class="btn btn-success btn-sm">
+		<div class="row">
+			<div class="col-md-12">
+				{{ render_field(comment_form.comment, class_='form-control') }}
+			</div>
+		</div>
+		{% if config.USE_RECAPTCHA and g.user.age < config['ACCOUNT_RECAPTCHA_AGE'] %}
+		<div class="row">
+			<div class="col-md-4">
+				{% if comment_form.recaptcha.errors %}
+				<div class="alert alert-danger">
+					<p><strong>CAPTCHA error:</strong></p>
+					<ul>
+						{% for error in comment_form.recaptcha.errors %}
+						<li>{{ error }}</li>
+						{% endfor %}
+					</ul>
+				</div>
+				{% endif %}
+				{{ comment_form.recaptcha }}
+			</div>
+		</div>
+		{% endif %}
+		<div class="row">
+			<div class="col-md-12">
+				<input type="submit" value="Submit" class="btn btn-success btn-sm">
+			</div>
+		</div>
 	</form>
 	{% endif %}
+	</div>
 </div>
 
-{% if g.user %}
+{% if g.user and g.user.age > config['RATELIMIT_ACCOUNT_AGE'] %}
 <div class="modal fade" id="reportModal" tabindex="-1" role="dialog" aria-labelledby="reportModalLabel">
 	<div class="modal-dialog" role="document">
 		<div class="modal-content">

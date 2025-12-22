@@ -18,31 +18,46 @@
 	<div class="row" style="margin-bottom: 20px;">
 		<div class="col-md-2" style="max-width: 150px;">
 			<img class="avatar" src="{{ user.gravatar_url() }}">
+			<a href="{{ url_for('users.view_user_comments', user_name=user.username) }}">View all comments</a>
 		</div>
 		<div class="col-md-4">
-			<dl class="dl-horizontal">
-				<dt>User ID:</dt>
-				<dd>{{ user.id }}</dd>
-				<dt>Account created on:</dt>
-				<dd data-timestamp="{{ user.created_utc_timestamp|int }}">{{ user.created_time.strftime('%Y-%m-%d %H:%M UTC') }}</dd>
-				<dt>Email address:</dt>
-				<dd>{{ user.email }}</dd>
-				<dt>User class:</dt>
-				<dd>{{ user.userlevel_str }}</dd>
-				<dt>User status:</dt>
-				<dd>{{ user.userstatus_str }}</dt>
-				{%- if g.user.is_superadmin -%}
-				<dt>Last login IP:</dt>
-				<dd>{{ user.ip_string }}</dd><br>
-				{%- endif -%}
-			</dl>
+			<div class="row">
+				<div class="col-md-12">
+					<dl class="dl-horizontal">
+						<dt>User ID:</dt>
+						<dd>{{ user.id }}</dd>
+						<dt>Account created on:</dt>
+						<dd data-timestamp="{{ user.created_utc_timestamp|int }}">{{ user.created_time.strftime('%Y-%m-%d %H:%M UTC') }}</dd>
+						<dt>Email address:</dt>
+						<dd>{{ user.email }}</dd>
+						<dt>User class:</dt>
+						<dd>{{ user.userlevel_str }}</dd>
+						<dt>User status:</dt>
+						<dd>{{ user.userstatus_str }}</dt>
+						{%- if g.user.is_superadmin -%}
+						<dt>Last login IP:</dt>
+						<dd>{{ user.ip_string }}</dd>
+						<dt>Registration IP:</dt>
+						<dd>{{ user.reg_ip_string }}</dd>
+						{%- endif -%}
+					</dl>
+				</div>
+			</div>
 			{% if admin_form %}
 			<form method="POST">
 				{{ admin_form.csrf_token }}
-
-				<div class="form-group">
-					{{ render_menu_with_button(admin_form.user_class) }}
+				<div class="row">
+					<div class="col-md-6">
+						{{ render_menu_with_button(admin_form.user_class) }}
+					</div>
 				</div>
+				{% if not user.is_active %}
+				<div class="row">
+					<div class="col-md-6">
+						{{ admin_form.activate_user(class="btn btn-primary") }}
+					</div>
+				</div>
+				{% endif %}
 			</form>
 			<br>
 			{% endif %}
@@ -72,13 +87,13 @@
 						{% if user.is_banned or bans %}
 						<div class="row">
 							<div class="col-md-12">
-								<p>
+								<ul>
 									{% for ban in bans %}
-									#{{ ban.id }}
+									<li>#{{ ban.id }}
 									by <a href="{{ url_for('users.view_user', user_name=ban.admin.username) }}">{{ ban.admin.username }}</a>
-									for <span markdown-text-inline>{{ ban.reason }}</span>
+									for <span markdown-text-inline>{{ ban.reason }}</span></li>
 									{% endfor %}
-								</p>
+								</ul>
 							</div>
 						</div>
 						<div class="row">
@@ -98,30 +113,37 @@
 							</div>
 						</div>
 						<div class="row">
-							<div class="col-md-4 text-left">
+							<div class="col-md-6 text-left">
 								{% if not user.is_banned %}
 								{{ ban_form.ban_user(value="Ban User", class="btn btn-danger") }}
 								{% else %}
 								<button type="button" class="btn btn-danger disabled">Already banned</button>
 								{% endif %}
 							</div>
-							<div class="col-md-4 text-center">
+							<div class="col-md-6 text-right">
 								{% if not ipbanned %}
 								{{ ban_form.ban_userip(value="Ban User+IP", class="btn btn-danger") }}
 								{% else %}
 								<button type="button" class="btn btn-danger disabled">Already IP banned</button>
 								{% endif %}
 							</div>
-							<div class="col-md-4 text-right">
-								{% if g.user.is_superadmin %}
-								{{ ban_form.nuke(value="\U0001F4A3 Nuke Torrents", class="btn btn-danger") }}
-								{% else %}
-								<button type="button" class="btn btn-danger disabled">&#x1f4a3; Nuke Torrents</button>
-								{% endif %}
-							</div>
 						</div>
 						{% endif %}
 					</form>
+					{% if g.user.is_superadmin %}
+					<hr>
+					<form method="POST" onsubmit="return prompt('Please type {{ user.username }} to confirm') == '{{ user.username }}'">
+						{{ nuke_form.csrf_token }}
+						<div class="row">
+							<div class="col-md-6 text-left">
+								{{ nuke_form.nuke_torrents(class="btn btn-danger", formaction=url_for('users.nuke_user_torrents', user_name=user.username)) }}
+							</div>
+							<div class="col-md-6 text-right">
+								{{ nuke_form.nuke_comments(class="btn btn-danger", formaction=url_for('users.nuke_user_comments', user_name=user.username)) }}
+							</div>
+						</div>
+					</form>
+					{% endif %}
 				</div>
 			</div>
 		</div>
@@ -132,6 +154,9 @@
 <div class="row">
 	<h3>
 		Browsing <span class="text-{{ user.userlevel_color }}" data-toggle="tooltip" title="{{ user.userlevel_str }}">{{ user.username }}</span>'{{ '' if user.username[-1] == 's' else 's' }} torrents
+		{% if torrent_query.actual_count is number and not search.term: %}
+		 ({{ torrent_query.actual_count  }})
+		{% endif %}
 	</h3>
 
 {% include "search_results.html" %}

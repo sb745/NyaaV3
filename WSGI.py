@@ -1,11 +1,16 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+WSGI entry point for the Nyaa application.
+Compatible with Python 3.13.
+"""
 import gevent.monkey
 gevent.monkey.patch_all()
 
 from nyaa import create_app
+from flask import Flask
 
-app = create_app('config')
+app: Flask = create_app('config')
 
 if app.config['DEBUG']:
     from werkzeug.debug import DebuggedApplication

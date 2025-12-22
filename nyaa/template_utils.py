@@ -1,15 +1,15 @@
+import functools
 import os.path
 import re
-from base64 import b32encode
 from datetime import datetime
 from email.utils import formatdate
-from urllib.parse import urlencode
 
 import flask
-from werkzeug.urls import url_encode
+#from werkzeug.utils import url_encode
+from urllib.parse import urlencode  # now using Python's built-in urlencode
 
 from nyaa.backend import get_category_id_map
-from nyaa.torrents import get_default_trackers
+from nyaa.torrents import create_magnet
 
 app = flask.current_app
 bp = flask.Blueprint('template-utils', __name__)
@@ -20,23 +20,34 @@ _static_cache = {}  # For static_cachebuster
 
 # For processing ES links
 @bp.app_context_processor
-def create_magnet_from_es_info():
-    def _create_magnet_from_es_info(display_name, info_hash, max_trackers=5, trackers=None):
-        if trackers is None:
-            trackers = get_default_trackers()
-
-        magnet_parts = [
-            ('dn', display_name)
-        ]
-        for tracker in trackers[:max_trackers]:
-            magnet_parts.append(('tr', tracker))
-
-        b32_info_hash = b32encode(bytes.fromhex(info_hash)).decode('utf-8')
-        return 'magnet:?xt=urn:btih:' + b32_info_hash + '&' + urlencode(magnet_parts)
-    return dict(create_magnet_from_es_info=_create_magnet_from_es_info)
+def create_magnet_from_es_torrent():
+    # Since ES entries look like ducks, we can use the create_magnet as-is
+    return dict(create_magnet_from_es_torrent=create_magnet)
 
 
 # ######################### TEMPLATE GLOBALS #########################
+
+flask_url_for = flask.url_for
+
+
+@functools.lru_cache(maxsize=1024 * 4)
+def _caching_url_for(endpoint, **values):
+    return flask_url_for(endpoint, **values)
+
+
+@bp.app_template_global()
+def caching_url_for(*args, **kwargs):
+    try:
+        # lru_cache requires the arguments to be hashable.
+        # Majority of the time, they are! But there are some small edge-cases,
+        # like our copypasted pagination, parameters can be lists.
+        # Attempt caching first:
+        return _caching_url_for(*args, **kwargs)
+    except TypeError:
+        # Then fall back to the original url_for.
+        # We could convert the lists to tuples, but the savings are marginal.
+        return flask_url_for(*args, **kwargs)
+
 
 @bp.app_template_global()
 def static_cachebuster(filename):
@@ -71,7 +82,7 @@ def modify_query(**new_values):
     for key, value in new_values.items():
         args[key] = value
 
-    return '{}?{}'.format(flask.request.path, url_encode(args))
+    return '{}?{}'.format(flask.request.path, urlencode(args))
 
 
 @bp.app_template_global()

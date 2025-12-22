@@ -4,7 +4,7 @@
 		<meta charset="utf-8">
 		<title>{% block title %}{{ config.SITE_NAME }}{% endblock %}</title>
 
-		<meta name="viewport" content="width=device-width">
+		<meta name="viewport" content="width=480px">
 		<meta http-equiv="X-UA-Compatible" content="IE=edge">
 		<link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
 		<link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
@@ -48,8 +48,12 @@
 		<script src="{{ static_cachebuster('js/lib/markdown-it-ins.min.js') }}"></script>
 		<script src="{{ static_cachebuster('js/lib/markdown-it-mark.min.js') }}"></script>
 		<!-- Modified to not apply border-radius to selectpickers and stuff so our navbar looks cool -->
-		<script src="{{ static_cachebuster('js/bootstrap-select.js') }}"></script>
-		<script src="{{ static_cachebuster('js/main.js') }}"></script>
+		{% assets "bs_js" %}
+		<script src="{{ static_cachebuster('js/bootstrap-select.min.js') }}"></script>
+		{% endassets %}
+		{% assets "main_js" %}
+		<script src="{{ static_cachebuster('js/main.min.js') }}"></script>
+		{% endassets %}
 
 		<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
 		<!--[if lt IE 9]>
@@ -83,12 +87,13 @@
 						<li {% if request.path == url_for('torrents.upload') %}class="active"{% endif %}><a href="{{ url_for('torrents.upload') }}">Upload</a></li>
 						<li class="dropdown">
 							<a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">
-								About
+								Info
 								<span class="caret"></span>
 							</a>
 							<ul class="dropdown-menu">
 								<li {% if request.path == url_for('site.rules') %}class="active"{% endif %}><a href="{{ url_for('site.rules') }}">Rules</a></li>
 								<li {% if request.path == url_for('site.help') %}class="active"{% endif %}><a href="{{ url_for('site.help') }}">Help</a></li>
+								<li {% if request.path == url_for('site.trusted') %}class="active"{% endif %}><a href="{{ url_for('site.trusted') }}">Trusted</a></li>
 							</ul>
 						</li>
 						<li><a href="{% if rss_filter %}{{ url_for('main.home', page='rss', **rss_filter) }}{% else %}{{ url_for('main.home', page='rss') }}{% endif %}">RSS</a></li>
@@ -107,6 +112,7 @@
 								<li {% if request.path == url_for('admin.reports') %}class="active"{% endif %}><a href="{{ url_for('admin.reports') }}">Reports</a></li>
 								<li {% if request.path == url_for('admin.log') %}class="active"{% endif %}><a href="{{ url_for('admin.log') }}">Log</a></li>
 								<li {% if request.path == url_for('admin.bans') %}class="active"{% endif %}><a href="{{ url_for('admin.bans') }}">Bans</a></li>
+								<li {% if request.path == url_for('admin.trusted') %}class="active"{% endif %}><a href="{{ url_for('admin.trusted') }}">Trusted</a></li>
 							</ul>
 						</li>
 						{% endif %}
@@ -328,7 +334,7 @@
 		<footer style="text-align: center;">
 			<p>Dark Mode: <a href="#" id="themeToggle">Toggle</a></p>
 			{% if config.COMMIT_HASH %}
-			<p>Commit: <a href="https://github.com/nyaadevs/nyaa/tree/{{ config.COMMIT_HASH }}">{{ config.COMMIT_HASH[:7] }}</a></p>
+			<p>Commit: <a href="https://github.com/sb745/NyaaV3/tree/{{ config.COMMIT_HASH }}">{{ config.COMMIT_HASH[:7] }}</a></p>
 			{% endif %}
 		</footer>
 	</body>

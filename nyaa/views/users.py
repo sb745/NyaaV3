@@ -3,17 +3,18 @@ import math
 import time
 from ipaddress import ip_address
 from itertools import chain
+from markupsafe import Markup
 
 import flask
 from flask_paginate import Pagination
 
 from itsdangerous import BadSignature, URLSafeSerializer
 
-from nyaa import backend, forms, models
+from nyaa import forms, models
 from nyaa.extensions import db
 from nyaa.search import (DEFAULT_MAX_SEARCH_RESULT, DEFAULT_PER_PAGE, SERACH_PAGINATE_DISPLAY_MSG,
-                         _generate_query_string, search_db, search_elastic)
-from nyaa.utils import chain_get, sha1_hash
+                         _generate_query_string, search_db, search_db_baked, search_elastic)
+from nyaa.utils import admin_only, chain_get, sha1_hash
 
 app = flask.current_app
 bp = flask.Blueprint('users', __name__)
@@ -30,6 +31,7 @@ def view_user(user_name):
     ban_form = None
     bans = None
     ipbanned = None
+    nuke_form = None
     if flask.g.user and flask.g.user.is_moderator and flask.g.user.level > user.level:
         admin_form = forms.UserForm()
         default, admin_form.user_class.choices = _create_user_class_choices(user)
@@ -37,6 +39,7 @@ def view_user(user_name):
             admin_form.user_class.data = default
 
         ban_form = forms.BanForm()
+        nuke_form = forms.NukeForm()
         if flask.request.method == 'POST':
             doban = (ban_form.ban_user.data or ban_form.unban.data or ban_form.ban_userip.data)
         bans = models.Ban.banned(user.id, user.last_login_ip).all()
@@ -45,20 +48,25 @@ def view_user(user_name):
     url = flask.url_for('users.view_user', user_name=user.username)
     if flask.request.method == 'POST' and admin_form and not doban and admin_form.validate():
         selection = admin_form.user_class.data
-        log = None
-        if selection == 'regular':
-            user.level = models.UserLevelType.REGULAR
-            log = "[{}]({}) changed to regular user".format(user_name, url)
-        elif selection == 'trusted':
-            user.level = models.UserLevelType.TRUSTED
-            log = "[{}]({}) changed to trusted user".format(user_name, url)
-        elif selection == 'moderator':
-            user.level = models.UserLevelType.MODERATOR
-            log = "[{}]({}) changed to moderator user".format(user_name, url)
+        mapping = {'regular': models.UserLevelType.REGULAR,
+                   'trusted': models.UserLevelType.TRUSTED,
+                   'moderator': models.UserLevelType.MODERATOR}
 
-        adminlog = models.AdminLog(log=log, admin_id=flask.g.user.id)
+        if mapping[selection] != user.level:
+            user.level = mapping[selection]
+            log = "[{}]({}) changed to {} user".format(user_name, url, selection)
+            adminlog = models.AdminLog(log=log, admin_id=flask.g.user.id)
+            db.session.add(adminlog)
+
+        if admin_form.activate_user.data and not user.is_banned:
+            if user.status != models.UserStatusType.ACTIVE:
+                user.status = models.UserStatusType.ACTIVE
+                adminlog = models.AdminLog("[{}]({}) was manually activated"
+                                           .format(user_name, url), admin_id=flask.g.user.id)
+                db.session.add(adminlog)
+                flask.flash('{} was manually activated'.format(user_name), 'success')
+
         db.session.add(user)
-        db.session.add(adminlog)
         db.session.commit()
 
         return flask.redirect(url)
@@ -67,7 +75,7 @@ def view_user(user_name):
         if (ban_form.ban_user.data and user.is_banned) or \
                 (ban_form.ban_userip.data and ipbanned) or \
                 (ban_form.unban.data and not user.is_banned and not bans):
-            flask.flash(flask.Markup('What the fuck are you doing?'), 'danger')
+            flask.flash(Markup('What the fuck are you doing?'), 'danger')
             return flask.redirect(url)
 
         user_str = "[{0}]({1})".format(user.username, url)
@@ -100,43 +108,8 @@ def view_user(user_name):
 
         db.session.commit()
 
-        flask.flash(flask.Markup('User has been successfully {0}.'.format(action)), 'success')
+        flask.flash(Markup('User has been successfully {0}.'.format(action)), 'success')
         return flask.redirect(url)
-
-    if flask.request.method == 'POST' and ban_form and ban_form.nuke.data:
-        if flask.g.user.is_superadmin:
-            nyaa_banned = 0
-            sukebei_banned = 0
-            info_hashes = []
-            for t in chain(user.nyaa_torrents, user.sukebei_torrents):
-                t.deleted = True
-                t.banned = True
-                info_hashes.append([t.info_hash])
-                db.session.add(t)
-                if isinstance(t, models.NyaaTorrent):
-                    nyaa_banned += 1
-                else:
-                    sukebei_banned += 1
-
-            if info_hashes:
-                backend.tracker_api(info_hashes, 'ban')
-
-            for log_flavour, num in ((models.NyaaAdminLog, nyaa_banned),
-                                     (models.SukebeiAdminLog, sukebei_banned)):
-                if num > 0:
-                    log = "Nuked {0} torrents of [{1}]({2})".format(num,
-                                                                    user.username,
-                                                                    url)
-                    adminlog = log_flavour(log=log, admin_id=flask.g.user.id)
-                    db.session.add(adminlog)
-
-            db.session.commit()
-            flask.flash('Torrents of {0} have been nuked.'.format(user.username),
-                        'success')
-            return flask.redirect(url)
-        else:
-            flask.flash('Insufficient permissions to nuke.', 'danger')
-            return flask.redirect(url)
 
     req_args = flask.request.args
 
@@ -204,6 +177,7 @@ def view_user(user_name):
                                      rss_filter=rss_query_string,
                                      admin_form=admin_form,
                                      ban_form=ban_form,
+                                     nuke_form=nuke_form,
                                      bans=bans,
                                      ipbanned=ipbanned)
     # Similar logic as home page
@@ -212,7 +186,10 @@ def view_user(user_name):
             query_args['term'] = ''
         else:
             query_args['term'] = search_term or ''
-        query = search_db(**query_args)
+        if app.config['USE_BAKED_SEARCH']:
+            query = search_db_baked(**query_args)
+        else:
+            query = search_db(**query_args)
         return flask.render_template('user.html',
                                      use_elastic=False,
                                      torrent_query=query,
@@ -222,14 +199,42 @@ def view_user(user_name):
                                      rss_filter=rss_query_string,
                                      admin_form=admin_form,
                                      ban_form=ban_form,
+                                     nuke_form=nuke_form,
                                      bans=bans,
                                      ipbanned=ipbanned)
+
+
+@bp.route('/user/<user_name>/comments')
+def view_user_comments(user_name):
+    user = models.User.by_username(user_name)
+
+    if not user:
+        flask.abort(404)
+
+    # Only moderators get to see all comments for now
+    if not flask.g.user or not flask.g.user.is_moderator:
+        flask.abort(403)
+
+    page_number = flask.request.args.get('p')
+    try:
+        page_number = max(1, int(page_number))
+    except (ValueError, TypeError):
+        page_number = 1
+
+    comments_per_page = 100
+
+    comments_query = (models.Comment.query.filter(models.Comment.user == user)
+                                          .order_by(models.Comment.created_time.desc()))
+    comments_query = comments_query.paginate_faste(page_number, per_page=comments_per_page, step=5)
+    return flask.render_template('user_comments.html',
+                                 comments_query=comments_query,
+                                 user=user)
 
 
 @bp.route('/user/activate/<payload>')
 def activate_user(payload):
     if app.config['MAINTENANCE_MODE']:
-        flask.flash(flask.Markup('<strong>Activations are currently disabled.</strong>'), 'danger')
+        flask.flash(Markup('<strong>Activations are currently disabled.</strong>'), 'danger')
         return flask.redirect(flask.url_for('main.home'))
 
     s = get_serializer()
@@ -255,8 +260,93 @@ def activate_user(payload):
     flask.session.permanent = True
     flask.session.modified = True
 
-    flask.flash(flask.Markup("You've successfully verified your account!"), 'success')
+    flask.flash(Markup("You've successfully verified your account!"), 'success')
     return flask.redirect(flask.url_for('main.home'))
+
+
+@bp.route('/user/<user_name>/nuke/torrents', methods=['POST'])
+@admin_only
+def nuke_user_torrents(user_name):
+    user = models.User.by_username(user_name)
+    if not user:
+        flask.abort(404)
+
+    nuke_form = forms.NukeForm(flask.request.form)
+    if not nuke_form.validate():
+        flask.abort(401)
+    url = flask.url_for('users.view_user', user_name=user.username)
+    nyaa_banned = 0
+    sukebei_banned = 0
+    for t in chain(user.nyaa_torrents, user.sukebei_torrents):
+        t.deleted = True
+        t.banned = True
+        t.stats.seed_count = 0
+        t.stats.leech_count = 0
+        db.session.add(t)
+        if isinstance(t, models.NyaaTorrent):
+            db.session.add(models.NyaaTrackerApi(t.info_hash, 'remove'))
+            nyaa_banned += 1
+        else:
+            db.session.add(models.SukebeiTrackerApi(t.info_hash, 'remove'))
+            sukebei_banned += 1
+
+    for log_flavour, num in ((models.NyaaAdminLog, nyaa_banned),
+                             (models.SukebeiAdminLog, sukebei_banned)):
+        if num > 0:
+            log = "Nuked {0} torrents of [{1}]({2})".format(num,
+                                                            user.username,
+                                                            url)
+            adminlog = log_flavour(log=log, admin_id=flask.g.user.id)
+            db.session.add(adminlog)
+
+    db.session.commit()
+    flask.flash('Torrents of {0} have been nuked.'.format(user.username),
+                'success')
+    return flask.redirect(url)
+
+
+@bp.route('/user/<user_name>/nuke/comments', methods=['POST'])
+@admin_only
+def nuke_user_comments(user_name):
+    user = models.User.by_username(user_name)
+    if not user:
+        flask.abort(404)
+
+    nuke_form = forms.NukeForm(flask.request.form)
+    if not nuke_form.validate():
+        flask.abort(401)
+    url = flask.url_for('users.view_user', user_name=user.username)
+    nyaa_deleted = 0
+    sukebei_deleted = 0
+    nyaa_torrents = set()
+    sukebei_torrents = set()
+    for c in chain(user.nyaa_comments, user.sukebei_comments):
+        nyaa_torrents.add(c.torrent_id)
+        sukebei_torrents.add(c.torrent_id)
+        db.session.delete(c)
+        if isinstance(c, models.NyaaComment):
+            nyaa_deleted += 1
+        else:
+            sukebei_deleted += 1
+
+    for tid in nyaa_torrents:
+        models.NyaaTorrent.update_comment_count_db(tid)
+    for tid in sukebei_torrents:
+        models.SukebeiTorrent.update_comment_count_db(tid)
+
+    for log_flavour, num in ((models.NyaaAdminLog, nyaa_deleted),
+                             (models.SukebeiAdminLog, sukebei_deleted)):
+        if num > 0:
+            log = "Nuked {0} comments of [{1}]({2})".format(num,
+                                                            user.username,
+                                                            url)
+            adminlog = log_flavour(log=log, admin_id=flask.g.user.id)
+            db.session.add(adminlog)
+
+    db.session.commit()
+    flask.flash('Comments of {0} have been nuked.'.format(user.username),
+                'success')
+    return flask.redirect(url)
 
 
 def _create_user_class_choices(user):

@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
+"""
+Database creation script for Nyaa.
+Compatible with Python 3.13 and SQLAlchemy 2.0.
+"""
+from typing import List, Tuple, Type
+
 import sqlalchemy
+from sqlalchemy import select
 
 from nyaa import create_app, models
 from nyaa.extensions import db
 
 app = create_app('config')
 
-NYAA_CATEGORIES = [
+NYAA_CATEGORIES: List[Tuple[str, List[str]]] = [
     ('Anime', ['Anime Music Video', 'English-translated', 'Non-English-translated', 'Raw']),
     ('Audio', ['Lossless', 'Lossy']),
     ('Literature', ['English-translated', 'Non-English-translated', 'Raw']),
@@ -16,13 +23,23 @@ NYAA_CATEGORIES = [
 ]
 
 
-SUKEBEI_CATEGORIES = [
+SUKEBEI_CATEGORIES: List[Tuple[str, List[str]]] = [
     ('Art', ['Anime', 'Doujinshi', 'Games', 'Manga', 'Pictures']),
     ('Real Life', ['Photobooks / Pictures', 'Videos']),
 ]
 
 
-def add_categories(categories, main_class, sub_class):
+def add_categories(categories: List[Tuple[str, List[str]]], 
+                  main_class: Type[models.MainCategoryBase], 
+                  sub_class: Type[models.SubCategoryBase]) -> None:
+    """
+    Add categories to the database.
+    
+    Args:
+        categories: List of tuples containing main category name and list of subcategory names
+        main_class: Main category model class
+        sub_class: Subcategory model class
+    """
     for main_cat_name, sub_cat_names in categories:
         main_cat = main_class(name=main_cat_name)
         for i, sub_cat_name in enumerate(sub_cat_names):
@@ -36,19 +53,24 @@ if __name__ == '__main__':
         # Test for the user table, assume db is empty if it's not created
         database_empty = False
         try:
-            models.User.query.first()
+            stmt = select(models.User).limit(1)
+            db.session.execute(stmt).scalar_one_or_none()
         except (sqlalchemy.exc.ProgrammingError, sqlalchemy.exc.OperationalError):
             database_empty = True
 
         print('Creating all tables...')
         db.create_all()
 
-        nyaa_category_test = models.NyaaMainCategory.query.first()
+        # Check if Nyaa categories exist
+        stmt = select(models.NyaaMainCategory).limit(1)
+        nyaa_category_test = db.session.execute(stmt).scalar_one_or_none()
         if not nyaa_category_test:
             print('Adding Nyaa categories...')
             add_categories(NYAA_CATEGORIES, models.NyaaMainCategory, models.NyaaSubCategory)
 
-        sukebei_category_test = models.SukebeiMainCategory.query.first()
+        # Check if Sukebei categories exist
+        stmt = select(models.SukebeiMainCategory).limit(1)
+        sukebei_category_test = db.session.execute(stmt).scalar_one_or_none()
         if not sukebei_category_test:
             print('Adding Sukebei categories...')
             add_categories(SUKEBEI_CATEGORIES, models.SukebeiMainCategory, models.SukebeiSubCategory)

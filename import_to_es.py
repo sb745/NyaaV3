@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Bulk load torents from mysql into elasticsearch `nyaav2` index,
+Bulk load torents from mysql into elasticsearch `nyaav3` index,
 which is assumed to already exist.
 This is a one-shot deal, so you'd either need to complement it
 with a cron job or some binlog-reading thing (TODO)
@@ -18,8 +18,11 @@ from nyaa import create_app, models
 from nyaa.extensions import db
 
 app = create_app('config')
-es = Elasticsearch(timeout=30)
+es = Elasticsearch(hosts=app.config['ES_HOSTS'], timeout=30)
 ic = IndicesClient(es)
+
+def pad_bytes(in_bytes, size):
+    return in_bytes + (b'\x00' * max(0, size - len(in_bytes)))
 
 # turn into thing that elasticsearch indexes. We flatten in
 # the stats (seeders/leechers) so we can order by them in es naturally.
@@ -31,7 +34,6 @@ ic = IndicesClient(es)
 def mk_es(t, index_name):
     return {
         "_id": t.id,
-        "_type": "torrent",
         "_index": index_name,
         "_source": {
             # we're also indexing the id as a number so you can
@@ -42,7 +44,7 @@ def mk_es(t, index_name):
             "created_time": t.created_time,
             # not analyzed but included so we can render magnet links
             # without querying sql again.
-            "info_hash": t.info_hash.hex(),
+            "info_hash": pad_bytes(t.info_hash, 20).hex(),
             "filesize": t.filesize,
             "uploader_id": t.uploader_id,
             "main_category_id": t.main_category_id,

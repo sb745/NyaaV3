@@ -34,7 +34,11 @@ from elasticsearch.helpers import bulk, BulkIndexError
 from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.row_event import UpdateRowsEvent, DeleteRowsEvent, WriteRowsEvent
 from datetime import datetime
+
+from nyaa import create_app, db, models
 from nyaa.models import TorrentFlags
+app = create_app('config')
+
 import sys
 import json
 import time
@@ -73,6 +77,9 @@ ES_CHUNK_SIZE = config.get('es_chunk_size', 10000)
 # interacts with es' refresh_interval setting.
 FLUSH_INTERVAL = config.get('flush_interval', 5)
 
+def pad_bytes(in_bytes, size):
+    return in_bytes + (b'\x00' * max(0, size - len(in_bytes)))
+
 def reindex_torrent(t, index_name):
     # XXX annoyingly different from import_to_es, and
     # you need to keep them in sync manually.
@@ -85,7 +92,7 @@ def reindex_torrent(t, index_name):
         "description": t['description'],
         # not analyzed but included so we can render magnet links
         # without querying sql again.
-        "info_hash": t['info_hash'].hex(),
+        "info_hash": pad_bytes(t['info_hash'], 20).hex(),
         "filesize": t['filesize'],
         "uploader_id": t['uploader_id'],
         "main_category_id": t['main_category_id'],
@@ -107,7 +114,6 @@ def reindex_torrent(t, index_name):
     return {
         '_op_type': 'update',
         '_index': index_name,
-        '_type': 'torrent',
         '_id': str(t['id']),
         "doc": doc,
         "doc_as_upsert": True
@@ -121,7 +127,6 @@ def reindex_stats(s, index_name):
     return {
         '_op_type': 'update',
         '_index': index_name,
-        '_type': 'torrent',
         '_id': str(s['torrent_id']),
         "doc": {
             "stats_last_updated": s["last_updated"],
@@ -134,7 +139,6 @@ def delet_this(row, index_name):
     return {
         "_op_type": 'delete',
         '_index': index_name,
-        '_type': 'torrent',
         '_id': str(row['values']['id'])}
 
 # we could try to make this script robust to errors from es or mysql, but since
@@ -259,7 +263,7 @@ class EsPoster(ExitingThread):
         self.flush_interval = flush_interval
 
     def run_happy(self):
-        es = Elasticsearch(timeout=30)
+        es = Elasticsearch(hosts=app.config['ES_HOSTS'], timeout=30)
 
         last_save = time.time()
         since_last = 0

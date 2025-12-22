@@ -1,18 +1,15 @@
-import base64
+import functools
 import os
-import time
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
+import flask
 from flask import current_app as app
 
-from orderedset import OrderedSet
+from orderly_set import OrderlySet
 
 from nyaa import bencode
 
-USED_TRACKERS = OrderedSet()
-
-# Limit the amount of trackers added into .torrent files
-MAX_TRACKERS = 5
+USED_TRACKERS = OrderlySet()
 
 
 def read_trackers_from_file(file_object):
@@ -20,7 +17,7 @@ def read_trackers_from_file(file_object):
 
     for line in file_object:
         line = line.strip()
-        if line:
+        if line and not line.startswith('#'):
             USED_TRACKERS.add(line)
     return USED_TRACKERS
 
@@ -40,8 +37,8 @@ def default_trackers():
 
 
 def get_trackers_and_webseeds(torrent):
-    trackers = OrderedSet()
-    webseeds = OrderedSet()
+    trackers = OrderlySet()
+    webseeds = OrderlySet()
 
     # Our main one first
     main_announce_url = app.config.get('MAIN_ANNOUNCE_URL')
@@ -66,7 +63,7 @@ def get_trackers_and_webseeds(torrent):
 
 
 def get_default_trackers():
-    trackers = OrderedSet()
+    trackers = OrderlySet()
 
     # Our main one first
     main_announce_url = app.config.get('MAIN_ANNOUNCE_URL')
@@ -79,19 +76,34 @@ def get_default_trackers():
     return list(trackers)
 
 
-def create_magnet(torrent, max_trackers=5, trackers=None):
+@functools.lru_cache(maxsize=1024*4)
+def _create_magnet(display_name, info_hash, max_trackers=5, trackers=None):
     # Unless specified, we just use default trackers
     if trackers is None:
         trackers = get_default_trackers()
 
     magnet_parts = [
-        ('dn', torrent.display_name)
+        ('dn', display_name)
     ]
-    for tracker in trackers[:max_trackers]:
-        magnet_parts.append(('tr', tracker))
+    magnet_parts.extend(
+        ('tr', tracker_url)
+        for tracker_url in trackers[:max_trackers]
+    )
 
-    b32_info_hash = base64.b32encode(torrent.info_hash).decode('utf-8')
-    return 'magnet:?xt=urn:btih:' + b32_info_hash + '&' + urlencode(magnet_parts)
+    return ''.join([
+        'magnet:?xt=urn:btih:', info_hash,
+        '&', urlencode(magnet_parts, quote_via=quote)
+    ])
+
+
+def create_magnet(torrent):
+    # Since we accept both models.Torrents and ES objects,
+    # we need to make sure the info_hash is a hex string
+    info_hash = torrent.info_hash
+    if isinstance(info_hash, (bytes, bytearray)):
+        info_hash = info_hash.hex()
+
+    return _create_magnet(torrent.display_name, info_hash)
 
 
 def create_default_metadata_base(torrent, trackers=None, webseeds=None):
@@ -102,9 +114,11 @@ def create_default_metadata_base(torrent, trackers=None, webseeds=None):
         webseeds = db_webseeds if webseeds is None else webseeds
 
     metadata_base = {
-        'created by': 'NyaaV2',
-        'creation date': int(time.time()),
-        'comment': 'NyaaV2 Torrent #' + str(torrent.id),  # Throw the url here or something neat
+        'created by': 'NyaaV3',
+        'creation date': int(torrent.created_utc_timestamp),
+        'comment': flask.url_for('torrents.view',
+                                 torrent_id=torrent.id,
+                                 _external=True)
         # 'encoding' : 'UTF-8' # It's almost always UTF-8 and expected, but if it isn't...
     }
 
@@ -112,7 +126,7 @@ def create_default_metadata_base(torrent, trackers=None, webseeds=None):
         metadata_base['announce'] = trackers[0]
     if len(trackers) > 1:
         # Yes, it's a list of lists with a single element inside.
-        metadata_base['announce-list'] = [[tracker] for tracker in trackers[:MAX_TRACKERS]]
+        metadata_base['announce-list'] = [[tracker] for tracker in trackers]
 
     # Add webseeds
     if webseeds:
@@ -121,7 +135,7 @@ def create_default_metadata_base(torrent, trackers=None, webseeds=None):
     return metadata_base
 
 
-def create_bencoded_torrent(torrent, metadata_base=None):
+def create_bencoded_torrent(torrent, bencoded_info, metadata_base=None):
     ''' Creates a bencoded torrent metadata for a given torrent,
         optionally using a given metadata_base dict (note: 'info' key will be
         popped off the dict) '''
@@ -138,7 +152,6 @@ def create_bencoded_torrent(torrent, metadata_base=None):
     prefix = bencode.encode(prefixed_dict)
     suffix = bencode.encode(suffixed_dict)
 
-    bencoded_info = torrent.info.info_dict
     bencoded_torrent = prefix[:-1] + b'4:info' + bencoded_info + suffix[1:]
 
     return bencoded_torrent

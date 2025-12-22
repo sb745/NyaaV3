@@ -1,8 +1,9 @@
 import base64
 import math
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
+from markupsafe import Markup
 
 import flask
 from flask_paginate import Pagination
@@ -10,7 +11,7 @@ from flask_paginate import Pagination
 from nyaa import models
 from nyaa.extensions import db
 from nyaa.search import (DEFAULT_MAX_SEARCH_RESULT, DEFAULT_PER_PAGE, SERACH_PAGINATE_DISPLAY_MSG,
-                         _generate_query_string, search_db, search_elastic)
+                         _generate_query_string, search_db, search_db_baked, search_elastic)
 from nyaa.utils import chain_get
 from nyaa.views.account import logout
 
@@ -37,8 +38,8 @@ def before_request():
 
         flask.g.user = user
 
-        if 'timeout' not in flask.session or flask.session['timeout'] < datetime.now():
-            flask.session['timeout'] = datetime.now() + timedelta(days=7)
+        if 'timeout' not in flask.session or flask.session['timeout'] < datetime.now(timezone.utc):
+            flask.session['timeout'] = datetime.now(timezone.utc) + timedelta(days=7)
             flask.session.permanent = True
             flask.session.modified = True
 
@@ -140,7 +141,7 @@ def home(rss):
     infohash_torrent = special_results.get('infohash_torrent')
     if infohash_torrent:
         # infohash_torrent is only set if this is not RSS or userpage search
-        flask.flash(flask.Markup('You were redirected here because '
+        flask.flash(Markup('You were redirected here because '
                                  'the given hash matched this torrent.'), 'info')
         # Redirect user from search to the torrent if we found one with the specific info_hash
         return flask.redirect(flask.url_for('torrents.view', torrent_id=infohash_torrent.id))
@@ -167,7 +168,7 @@ def home(rss):
         else:
             rss_query_string = _generate_query_string(
                 search_term, category, quality_filter, user_name)
-            max_results = min(max_search_results, query_results['hits']['total'])
+            max_results = min(max_search_results, query_results['hits']['total']['value'])
             # change p= argument to whatever you change page_parameter to or pagination breaks
             pagination = Pagination(p=query_args['page'], per_page=results_per_page,
                                     total=max_results, bs_version=3, page_parameter='p',
@@ -186,7 +187,11 @@ def home(rss):
         else:  # Otherwise, use db search for everything
             query_args['term'] = search_term or ''
 
-        query = search_db(**query_args)
+        if app.config['USE_BAKED_SEARCH']:
+            query = search_db_baked(**query_args)
+        else:
+            query = search_db(**query_args)
+
         if render_as_rss:
             return render_rss('Home', query, use_elastic=False, magnet_links=use_magnet_links)
         else:

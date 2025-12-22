@@ -1,20 +1,42 @@
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from ipaddress import ip_address
-from urllib.parse import urlencode
-from urllib.request import urlopen
 
 import flask
-from werkzeug import secure_filename
+from werkzeug.utils import secure_filename
 
 import sqlalchemy
-from orderedset import OrderedSet
+from orderly_set import OrderlySet
 
 from nyaa import models, utils
 from nyaa.extensions import db
 
 app = flask.current_app
+
+# Blacklists for _validate_torrent_filenames
+# TODO: consider moving to config.py?
+CHARACTER_BLACKLIST = [
+    '\u202E',  # RIGHT-TO-LEFT OVERRIDE
+]
+FILENAME_BLACKLIST = [
+    # Windows reserved filenames
+    'con',
+    'nul',
+    'prn',
+    'aux',
+    'com0', 'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+    'lpt0', 'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
+]
+
+# Invalid RSS characters regex, used to sanitize some strings
+ILLEGAL_XML_CHARS_RE = re.compile(u'[\x00-\x08\x0b\x0c\x0e-\x1F\uD800-\uDFFF\uFFFE\uFFFF]')
+
+
+def sanitize_string(string, replacement='\uFFFD'):
+    ''' Simply replaces characters based on a regex '''
+    return ILLEGAL_XML_CHARS_RE.sub(replacement, string)
 
 
 class TorrentExtraValidationException(Exception):
@@ -64,16 +86,14 @@ def _recursive_dict_iterator(source):
 
 
 def _validate_torrent_filenames(torrent):
-    ''' Checks path parts of a torrent's filetree against blacklisted characters,
-        returning False on rejection '''
-    # TODO Move to config.py
-    character_blacklist = [
-        '\u202E',  # RIGHT-TO-LEFT OVERRIDE
-    ]
+    ''' Checks path parts of a torrent's filetree against blacklisted characters
+        and filenames, returning False on rejection '''
     file_tree = json.loads(torrent.filelist.filelist_blob.decode('utf-8'))
 
     for path_part, value in _recursive_dict_iterator(file_tree):
-        if any(True for c in character_blacklist if c in path_part):
+        if path_part.rsplit('.', 1)[0].lower() in FILENAME_BLACKLIST:
+            return False
+        if any(True for c in CHARACTER_BLACKLIST if c in path_part):
             return False
 
     return True
@@ -119,7 +139,9 @@ def check_uploader_ratelimit(user):
 
     def filter_uploader(query):
         if user:
-            return query.filter(Torrent.user == user)
+            return query.filter(sqlalchemy.or_(
+                Torrent.user == user,
+                Torrent.uploader_ip == ip_address(flask.request.remote_addr).packed))
         else:
             return query.filter(Torrent.uploader_ip == ip_address(flask.request.remote_addr).packed)
 
@@ -160,11 +182,23 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
             upload_form.ratelimit.errors = ["You've gone over the upload ratelimit."]
             raise TorrentExtraValidationException()
 
-    # Delete exisiting torrent which is marked as deleted
+    if not uploading_user:
+        if app.config['RAID_MODE_LIMIT_UPLOADS']:
+            # XXX TODO: rename rangebanned to something more generic
+            upload_form.rangebanned.errors = [app.config['RAID_MODE_UPLOADS_MESSAGE']]
+            raise TorrentExtraValidationException()
+        elif models.RangeBan.is_rangebanned(ip_address(flask.request.remote_addr).packed):
+            upload_form.rangebanned.errors = ["Your IP is banned from "
+                                              "uploading anonymously."]
+            raise TorrentExtraValidationException()
+
+    # Delete existing torrent which is marked as deleted
     if torrent_data.db_id is not None:
-        models.Torrent.query.filter_by(id=torrent_data.db_id).delete()
+        old_torrent = models.Torrent.by_id(torrent_data.db_id)
+        db.session.delete(old_torrent)
         db.session.commit()
-        _delete_cached_torrent_file(torrent_data.db_id)
+        # Delete physical file after transaction has been committed
+        _delete_info_dict(old_torrent)
 
     # The torrent has been  validated and is safe to access with ['foo'] etc - all relevant
     # keys and values have been checked for (see UploadForm in forms.py for details)
@@ -176,6 +210,11 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
     display_name = upload_form.display_name.data.strip() or info_dict['name'].decode('utf8').strip()
     information = (upload_form.information.data or '').strip()
     description = (upload_form.description.data or '').strip()
+
+    # Sanitize fields
+    display_name = sanitize_string(display_name)
+    information = sanitize_string(information)
+    description = sanitize_string(description)
 
     torrent_filesize = info_dict.get('length') or sum(
         f['length'] for f in info_dict.get('files'))
@@ -195,7 +234,14 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
                              uploader_ip=ip_address(flask.request.remote_addr).packed)
 
     # Store bencoded info_dict
-    torrent.info = models.TorrentInfo(info_dict=torrent_data.bencoded_info_dict)
+    info_dict_path = torrent.info_dict_path
+
+    info_dict_dir = os.path.dirname(info_dict_path)
+    os.makedirs(info_dict_dir, exist_ok=True)
+
+    with open(info_dict_path, 'wb') as out_file:
+        out_file.write(torrent_data.bencoded_info_dict)
+
     torrent.stats = models.Statistic()
     torrent.has_torrent = True
 
@@ -210,6 +256,10 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
     can_mark_trusted = uploading_user and uploading_user.is_trusted
     # To do, automatically mark trusted if user is trusted unless user specifies otherwise
     torrent.trusted = upload_form.is_trusted.data if can_mark_trusted else False
+
+    # Only allow mods to upload locked torrents
+    can_mark_locked = uploading_user and uploading_user.is_moderator
+    torrent.comment_locked = upload_form.is_comment_locked.data if can_mark_locked else False
 
     # Set category ids
     torrent.main_category_id, torrent.sub_category_id = \
@@ -254,7 +304,7 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
     db.session.flush()
 
     # Store the users trackers
-    trackers = OrderedSet()
+    trackers = OrderlySet()
     announce = torrent_data.torrent_dict.get('announce', b'').decode('ascii')
     if announce:
         trackers.add(announce)
@@ -269,12 +319,12 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
     webseed_list = torrent_data.torrent_dict.get('url-list') or []
     if isinstance(webseed_list, bytes):
         webseed_list = [webseed_list]  # qB doesn't contain a sole url in a list
-    webseeds = OrderedSet(webseed.decode('utf-8') for webseed in webseed_list)
+    webseeds = OrderlySet(webseed.decode('utf-8') for webseed in webseed_list)
 
     # Remove our trackers, maybe? TODO ?
 
     # Search for/Add trackers in DB
-    db_trackers = OrderedSet()
+    db_trackers = OrderlySet()
     for announce in trackers:
         tracker = models.Trackers.by_uri(announce)
 
@@ -313,6 +363,9 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
     # Before final commit, validate the torrent again
     validate_torrent_post_upload(torrent, upload_form)
 
+    # Add to tracker whitelist
+    db.session.add(models.TrackerApi(torrent.info_hash, 'insert'))
+
     db.session.commit()
 
     # Store the actual torrent file as well
@@ -321,8 +374,7 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
         torrent_file.seek(0, 0)
 
         torrent_dir = app.config['BACKUP_TORRENT_FOLDER']
-        if not os.path.exists(torrent_dir):
-            os.makedirs(torrent_dir)
+        os.makedirs(torrent_dir, exist_ok=True)
 
         torrent_path = os.path.join(torrent_dir, '{}.{}'.format(
             torrent.id, secure_filename(torrent_file.filename)))
@@ -332,38 +384,7 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
     return torrent
 
 
-def tracker_api(info_hashes, method):
-    api_url = app.config.get('TRACKER_API_URL')
-    if not api_url:
-        return False
-
-    # Split list into at most 100 elements
-    chunk_size = 100
-    chunk_range = range(0, len(info_hashes), chunk_size)
-    chunked_info_hashes = (info_hashes[i:i + chunk_size] for i in chunk_range)
-
-    for info_hashes_chunk in chunked_info_hashes:
-        qs = [
-            ('auth', app.config.get('TRACKER_API_AUTH')),
-            ('method', method)
-        ]
-
-        qs.extend(('info_hash', info_hash) for info_hash in info_hashes_chunk)
-
-        api_url += '?' + urlencode(qs)
-        try:
-            req = urlopen(api_url)
-        except:
-            return False
-
-        if req.status != 200:
-            return False
-    return True
-
-
-def _delete_cached_torrent_file(torrent_id):
-    # Note: obviously temporary
-    cached_torrent = os.path.join(app.config['BASE_DIR'],
-                                  'torrent_cache', str(torrent_id) + '.torrent')
-    if os.path.exists(cached_torrent):
-        os.remove(cached_torrent)
+def _delete_info_dict(torrent):
+    info_dict_path = torrent.info_dict_path
+    if os.path.exists(info_dict_path):
+        os.remove(info_dict_path)

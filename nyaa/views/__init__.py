@@ -1,4 +1,5 @@
 import flask
+from markupsafe import Markup
 
 from nyaa.views import (  # isort:skip
     account,
@@ -26,10 +27,10 @@ def _maintenance_mode_hook():
                 return resp
             else:
                 # Otherwise redirect to the target page and flash a message
-                flask.flash(flask.Markup(message), 'danger')
+                flask.flash(Markup(message), 'danger')
                 try:
                     target_url = flask.url_for(endpoint)
-                except:
+                except Exception:
                     # Non-GET-able endpoint, try referrer or default to home page
                     target_url = flask.request.referrer or flask.url_for('main.home')
                 return flask.redirect(target_url)

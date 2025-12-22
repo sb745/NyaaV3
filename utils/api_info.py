@@ -5,8 +5,8 @@ import re
 
 import requests
 
-NYAA_HOST = 'https://nyaa.si'
-SUKEBEI_HOST = 'https://sukebei.nyaa.si'
+NYAA_HOST = 'https://your.nyaa.instance'
+SUKEBEI_HOST = 'https://your.sukebei.instance'
 
 API_BASE = '/api'
 API_INFO = API_BASE + '/info'

@@ -11,8 +11,13 @@ from wtforms import (BooleanField, HiddenField, PasswordField, SelectField, Stri
                      SubmitField, TextAreaField)
 from wtforms.validators import (DataRequired, Email, EqualTo, Length, Optional, Regexp,
                                 StopValidation, ValidationError)
+# from wtforms.widgets import HTMLString  # For DisabledSelectField
+from markupsafe import Markup
 from wtforms.widgets import Select as SelectWidget  # For DisabledSelectField
-from wtforms.widgets import HTMLString, html_params  # For DisabledSelectField
+from wtforms.widgets import html_params
+
+import dns.exception
+import dns.resolver
 
 from nyaa import bencode, models, utils
 from nyaa.extensions import config
@@ -69,6 +74,59 @@ def upload_recaptcha_validator_shim(form, field):
         return True
 
 
+def register_email_blacklist_validator(form, field):
+    email_blacklist = app.config.get('EMAIL_BLACKLIST', [])
+    email = field.data.strip()
+    validation_exception = StopValidation('Blacklisted email provider')
+
+    for item in email_blacklist:
+        if isinstance(item, re.Pattern):
+            if item.search(email):
+                raise validation_exception
+        elif isinstance(item, str):
+            if item in email.lower():
+                raise validation_exception
+        else:
+            raise Exception('Unexpected email validator type {!r} ({!r})'.format(type(item), item))
+    return True
+
+
+def register_email_server_validator(form, field):
+    server_blacklist = app.config.get('EMAIL_SERVER_BLACKLIST', [])
+    if not server_blacklist:
+        return True
+
+    validation_exception = StopValidation('Blacklisted email provider')
+    email = field.data.strip()
+    email_domain = email.split('@', 1)[-1]
+
+    try:
+        # Query domain MX records
+        mx_records = list(dns.resolver.query(email_domain, 'MX'))
+
+    except dns.exception.DNSException:
+        app.logger.error('Unable to query MX records for email: %s - ignoring',
+                         email, exc_info=False)
+        return True
+
+    for mx_record in mx_records:
+        try:
+            # Query mailserver A records
+            a_records = list(dns.resolver.query(mx_record.exchange))
+            for a_record in a_records:
+                # Check for address in blacklist
+                if a_record.address in server_blacklist:
+                    app.logger.warning('Rejected email %s due to blacklisted mailserver (%s, %s)',
+                                       email, a_record.address, mx_record.exchange)
+                    raise validation_exception
+
+        except dns.exception.DNSException:
+            app.logger.warning('Failed to query A records for mailserver: %s (%s) - ignoring',
+                               mx_record.exchange, email, exc_info=False)
+
+    return True
+
+
 _username_validator = Regexp(
     r'^[a-zA-Z0-9_\-]+$',
     message='Your username must only consist of alphanumerics and _- (a-zA-Z0-9_-)')
@@ -105,14 +163,16 @@ class RegisterForm(FlaskForm):
         DataRequired(),
         Length(min=3, max=32),
         stop_on_validation_error(_username_validator),
-        Unique(User, User.username, 'Username not availiable')
+        Unique(User, User.username, 'Username not available')
     ])
 
     email = StringField('Email address', [
         Email(),
         DataRequired(),
         Length(min=5, max=128),
-        Unique(User, User.email, 'Email already in use by another account')
+        register_email_blacklist_validator,
+        Unique(User, User.email, 'Email already in use by another account'),
+        register_email_server_validator
     ])
 
     password = PasswordField('Password', [
@@ -146,6 +206,10 @@ class ProfileForm(FlaskForm):
     ])
 
     password_confirm = PasswordField('Repeat New Password')
+    hide_comments = BooleanField('Hide comments by default')
+
+    authorized_submit = SubmitField('Update')
+    submit_settings = SubmitField('Update')
 
 
 # Classes for a SelectField that can be set to disable options (id, name, disabled)
@@ -160,7 +224,7 @@ class DisabledSelectWidget(SelectWidget):
             extra = disabled and {'disabled': ''} or {}
             html.append(self.render_option(val, label, selected, **extra))
         html.append('</select>')
-        return HTMLString(''.join(html))
+        return Markup(''.join(html))
 
 
 class DisabledSelectField(SelectField):
@@ -187,6 +251,8 @@ class CommentForm(FlaskForm):
         DataRequired(message='Comment must not be empty.')
     ])
 
+    recaptcha = RecaptchaField(validators=[upload_recaptcha_validator_shim])
+
 
 class InlineButtonWidget(object):
     """
@@ -200,7 +266,7 @@ class InlineButtonWidget(object):
         kwargs.setdefault('type', self.input_type)
         if not label:
             label = field.label.text
-        return HTMLString('<button %s>' % self.html_params(name=field.name, **kwargs) + label)
+        return Markup('<button %s>' % self.html_params(name=field.name, **kwargs) + label)
 
 
 class StringSubmitField(StringField):
@@ -239,11 +305,11 @@ class EditForm(FlaskForm):
         field.parsed_data = cat
 
     is_hidden = BooleanField('Hidden')
-    is_deleted = BooleanField('Deleted')
     is_remake = BooleanField('Remake')
     is_anonymous = BooleanField('Anonymous')
     is_complete = BooleanField('Complete')
     is_trusted = BooleanField('Trusted')
+    is_comment_locked = BooleanField('Lock Comments')
 
     information = StringField('Information', [
         Length(max=255, message='Information must be at most %(max)d characters long.')
@@ -265,7 +331,6 @@ class DeleteForm(FlaskForm):
 class BanForm(FlaskForm):
     ban_user = SubmitField("Delete & Ban and Ban User")
     ban_userip = SubmitField("Delete & Ban and Ban User+IP")
-    nuke = SubmitField("Delete & Ban all torrents")
     unban = SubmitField("Unban")
 
     _validator = DataRequired()
@@ -278,6 +343,11 @@ class BanForm(FlaskForm):
         _validate_reason,
         Length(max=1024, message='Reason must be at most %(max)d characters long.')
     ])
+
+
+class NukeForm(FlaskForm):
+    nuke_torrents = SubmitField("\U0001F4A3 Nuke Torrents")
+    nuke_comments = SubmitField("\U0001F4A3 Nuke Comments")
 
 
 class UploadForm(FlaskForm):
@@ -316,6 +386,7 @@ class UploadForm(FlaskForm):
     is_anonymous = BooleanField('Anonymous')
     is_complete = BooleanField('Complete')
     is_trusted = BooleanField('Trusted')
+    is_comment_locked = BooleanField('Lock Comments')
 
     information = StringField('Information', [
         Length(max=255, message='Information must be at most %(max)d characters long.')
@@ -325,6 +396,7 @@ class UploadForm(FlaskForm):
     ])
 
     ratelimit = HiddenField()
+    rangebanned = HiddenField()
 
     def validate_torrent_file(form, field):
         # Decode and ensure data is bencoded data
@@ -384,6 +456,7 @@ class UploadForm(FlaskForm):
 
 class UserForm(FlaskForm):
     user_class = SelectField('Change User Class')
+    activate_user = SubmitField('Activate User')
 
     def validate_user_class(form, field):
         if not field.data:
@@ -413,6 +486,33 @@ class ReportActionForm(FlaskForm):
     action = SelectField(choices=[('close', 'Close'), ('hide', 'Hide'), ('delete', 'Delete')])
     torrent = HiddenField()
     report = HiddenField()
+
+
+class TrustedForm(FlaskForm):
+    why_give_trusted = TextAreaField('Why do you think you should be given trusted status?', [
+        Length(min=32, max=4000,
+               message='Please explain why you think you should be given trusted status in at '
+                       'least %(min)d but less than %(max)d characters.'),
+        DataRequired('Please fill out all of the fields in the form.')
+    ])
+    why_want_trusted = TextAreaField('Why do you want to become a trusted user?', [
+        Length(min=32, max=4000,
+               message='Please explain why you want to become a trusted user in at least %(min)d '
+                       'but less than %(max)d characters.'),
+        DataRequired('Please fill out all of the fields in the form.')
+    ])
+
+
+class TrustedReviewForm(FlaskForm):
+    comment = TextAreaField('Comment',
+                            [Length(min=8, max=4000, message='Please provide a comment')])
+    recommendation = SelectField(choices=[('abstain', 'Abstain'), ('reject', 'Reject'),
+                                          ('accept', 'Accept')])
+
+
+class TrustedDecisionForm(FlaskForm):
+    accept = SubmitField('Accept')
+    reject = SubmitField('Reject')
 
 
 def _validate_trackers(torrent_dict, tracker_to_check_for=None):

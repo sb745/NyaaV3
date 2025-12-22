@@ -45,29 +45,58 @@ class EmailHolder(object):
 
 
 def send_email(email_holder):
+    """Send an email using the configured mail backend."""
     mail_backend = app.config.get('MAIL_BACKEND')
-    if mail_backend == 'mailgun':
-        _send_mailgun(email_holder)
-    elif mail_backend == 'smtp':
-        _send_smtp(email_holder)
-    elif mail_backend:
-        # TODO: Do this in logging.error when we have that set up
-        print('Unknown mail backend:', mail_backend)
+    
+    if not mail_backend:
+        app.logger.warning('No mail backend configured, skipping email send')
+        return False
+        
+    try:
+        if mail_backend == 'mailgun':
+            success = _send_mailgun(email_holder)
+        elif mail_backend == 'smtp':
+            success = _send_smtp(email_holder)
+        else:
+            app.logger.error(f'Unknown mail backend: {mail_backend}')
+            return False
+            
+        if not success:
+            app.logger.error(f'Failed to send email using {mail_backend} backend')
+            return False
+            
+        app.logger.info(f'Email successfully sent using {mail_backend} backend')
+        return True
+        
+    except Exception as e:
+        app.logger.error(f'Error sending email: {str(e)}')
+        return False
 
 
 def _send_mailgun(email_holder):
-    mailgun_endpoint = app.config['MAILGUN_API_BASE'] + '/messages'
-    auth = ('api', app.config['MAILGUN_API_KEY'])
-    data = {
-        'from': app.config['MAIL_FROM_ADDRESS'],
-        'to': email_holder.format_recipient(),
-        'subject': email_holder.subject,
-        'text': email_holder.text,
-        'html': email_holder.html
-    }
-    r = requests.post(mailgun_endpoint, data=data, auth=auth)
-    # TODO real error handling?
-    assert r.status_code == 200
+    """Send an email using Mailgun API with proper error handling."""
+    try:
+        mailgun_endpoint = app.config['MAILGUN_API_BASE'] + '/messages'
+        auth = ('api', app.config['MAILGUN_API_KEY'])
+        data = {
+            'from': app.config['MAIL_FROM_ADDRESS'],
+            'to': email_holder.format_recipient(),
+            'subject': email_holder.subject,
+            'text': email_holder.text,
+            'html': email_holder.html
+        }
+        
+        r = requests.post(mailgun_endpoint, data=data, auth=auth)
+        
+        if r.status_code != 200:
+            app.logger.error(f'Mailgun API error: {r.status_code} - {r.text}')
+            return False
+            
+        return True
+        
+    except Exception as e:
+        app.logger.error(f'Error sending email via Mailgun: {str(e)}')
+        return False
 
 
 def _send_smtp(email_holder):
