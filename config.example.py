@@ -232,5 +232,6 @@ CACHE_THRESHOLD = 8192
 # RATELIMIT_STORAGE_URL="redis://host:port"
 RATELIMIT_KEY_PREFIX="nyaaratelimit_"
 
-# Use this to show the commit hash in the footer (see layout.html)
+# The commit hash is automatically shown in the footer if .git folder is present (see layout.html)
+# Use this to manually show the hash
 # COMMIT_HASH="[enter your commit hash here]";
