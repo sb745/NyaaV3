@@ -1,12 +1,12 @@
-# NyaaV3 [![python](https://img.shields.io/badge/Python-3.13-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org) ![Maintenance](https://img.shields.io/maintenance/yes/2025)
+# NyaaV3 [![python](https://img.shields.io/badge/Python-3.14-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org) ![Maintenance](https://img.shields.io/maintenance/yes/2025)
 
 ## Setting up for development
-This project uses Python 3.13. The codebase has been updated from the original Python 3.7 version to use modern Python features and updated dependencies.
+This project uses Python 3.14. The codebase has been updated from the original Python 3.7 version to use modern Python features and updated dependencies.
 This guide assumes you are using Linux and are somewhat capable with the commandline.   
 Running Nyaa on Windows may be possible, but it's currently unsupported.
 
 ### Major changes from NyaaV2
-- Updated from Python 3.7 to Python 3.13
+- Updated from Python 3.7 to Python 3.14
 - Updated all dependencies to their latest versions
 - Modernized code patterns for Flask 3.0 and SQLAlchemy 2.0
 - Replaced deprecated Flask-Script, orderedset and `flask.Markup` with Flask CLI, orderly-set and markupsafe
@@ -23,13 +23,13 @@ The `tests` folder contains tests for the the `nyaa` module and the webserver. T
 - Run `python dev.py test` while in the repository directory.
 
 ### Setting up Pyenv
-pyenv eases the use of different Python versions, and as not all Linux distros offer 3.13 packages, it's right up our alley.
+pyenv eases the use of different Python versions, and as not all Linux distros offer 3.14 packages, it's right up our alley.
 - Install [dependencies](https://github.com/pyenv/pyenv/wiki/Common-build-problems)
 - Install [pyenv](https://github.com/pyenv/pyenv/blob/master/README.md#installation)
 - Install [pyenv-virtualenv](https://github.com/pyenv/pyenv-virtualenv/blob/master/README.md)
-- Install Python 3.13 with `pyenv` and create a virtualenv for the project:
-    - `pyenv install 3.13.2`
-    - `pyenv virtualenv 3.13.2 nyaa`
+- Install Python 3.14 with `pyenv` and create a virtualenv for the project:
+    - `pyenv install 3.14.2`
+    - `pyenv virtualenv 3.14.2 nyaa`
     - `pyenv activate nyaa`
 - Install dependencies with `pip install -r requirements.txt`
 - Copy `config.example.py` into `config.py`

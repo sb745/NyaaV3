@@ -88,7 +88,7 @@ RECAPTCHA_PRIVATE_KEY = '***'
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 if USE_MYSQL:
-    SQLALCHEMY_DATABASE_URI = ('mysql://test:test123@localhost/nyaav3?charset=utf8mb4')
+    SQLALCHEMY_DATABASE_URI = ('mysql://nyaauser:nyaapass@localhost/nyaav3?charset=utf8mb4')
 else:
     SQLALCHEMY_DATABASE_URI = (
         'sqlite:///' + os.path.join(BASE_DIR, 'test.db') + '?check_same_thread=False')
@@ -98,7 +98,7 @@ else:
 ###########
 
 # 'smtp' or 'mailgun'
-MAIL_BACKEND = 'mailgun'
+MAIL_BACKEND = 'smtp'
 MAIL_FROM_ADDRESS = 'Sender Name <sender@domain.com>'
 
 # Mailgun settings
