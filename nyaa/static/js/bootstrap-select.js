@@ -808,7 +808,7 @@
       var $tmp = $('<div>').html(title);
       var plainTitle = $tmp.text();
       this.$button.attr('title', htmlUnescape($.trim(plainTitle)));
-      this.$button.children('.filter-option').html(title);
+      this.$button.children('.filter-option').text($.trim(plainTitle));
 
       this.$element.trigger('rendered.bs.select');
     },
