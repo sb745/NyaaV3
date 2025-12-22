@@ -638,6 +638,12 @@ blockquote {
 	font-size: inherit;
 }
 
+/* Make <mark>s a bit more prominent */
+mark, .mark {
+    background-color: #fff6c9;
+    padding: .2em;
+}
+
 /* Hide and resize some things on tiny screens to improve usability. */
 @media (max-width: 767px) {
 	.hdr-size, .hdr-date, .hdr-downloads,
