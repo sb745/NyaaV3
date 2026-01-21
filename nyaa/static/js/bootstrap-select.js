@@ -479,7 +479,7 @@
           inputGroup = this.$element.parent().hasClass('input-group') ? ' input-group-btn' : '',
           autofocus = this.autofocus ? ' autofocus' : '';
       // Elements
-      var header = this.options.header ? '<div class="popover-title"><button type="button" class="close" aria-hidden="true">&times;</button>' + this.options.header + '</div>' : '';
+      var header = this.options.header ? '<div class="popover-title"><button type="button" class="close" aria-hidden="true">&times;</button>' + htmlEscape(this.options.header) + '</div>' : '';
       var searchbox = this.options.liveSearch ?
       '<div class="bs-searchbox">' +
       '<input type="text" class="form-control" autocomplete="off"' +
@@ -490,10 +490,10 @@
       '<div class="bs-actionsbox">' +
       '<div class="btn-group btn-group-sm btn-block">' +
       '<button type="button" class="actions-btn bs-select-all btn btn-default">' +
-      this.options.selectAllText +
+      htmlEscape(this.options.selectAllText) +
       '</button>' +
       '<button type="button" class="actions-btn bs-deselect-all btn btn-default">' +
-      this.options.deselectAllText +
+      htmlEscape(this.options.deselectAllText) +
       '</button>' +
       '</div>' +
       '</div>'
@@ -502,7 +502,7 @@
       '<div class="bs-donebutton">' +
       '<div class="btn-group btn-block">' +
       '<button type="button" class="btn btn-sm btn-default">' +
-      this.options.doneButtonText +
+      htmlEscape(this.options.doneButtonText) +
       '</button>' +
       '</div>' +
       '</div>'
@@ -577,7 +577,7 @@
             (typeof classes !== 'undefined' ? ' class="' + classes + '"' : '') +
             (inline ? ' style="' + inline + '"' : '') +
             (that.options.liveSearchNormalize ? ' data-normalized-text="' + normalizeToBase(htmlEscape($(text).html())) + '"' : '') +
-            (typeof tokens !== 'undefined' || tokens !== null ? ' data-tokens="' + tokens + '"' : '') +
+            (typeof tokens !== 'undefined' && tokens !== null ? ' data-tokens="' + htmlEscape(tokens) + '"' : '') +
             ' role="option">' + text +
             '<span class="' + that.options.iconBase + ' ' + that.options.tickIcon + ' check-mark"></span>' +
             '</a>';
@@ -615,9 +615,9 @@
         // Get the class and text for the option
         var optionClass = this.className || '',
             inline = this.style.cssText,
-            text = $this.data('content') ? $this.data('content') : $this.html(),
+            text = $this.data('content') ? htmlEscape($this.data('content')) : htmlEscape($this.text()),
             tokens = $this.data('tokens') ? $this.data('tokens') : null,
-            subtext = typeof $this.data('subtext') !== 'undefined' ? '<small class="text-muted">' + $this.data('subtext') + '</small>' : '',
+            subtext = typeof $this.data('subtext') !== 'undefined' ? '<small class="text-muted">' + htmlEscape($this.data('subtext')) + '</small>' : '',
             icon = typeof $this.data('icon') !== 'undefined' ? '<span class="' + that.options.iconBase + ' ' + $this.data('icon') + '"></span> ' : '',
             $parent = $this.parent(),
             isOptgroup = $parent[0].tagName === 'OPTGROUP',
