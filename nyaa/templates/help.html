@@ -3,7 +3,7 @@
 {% block body %}
 
 {% macro linkable_header(heading, label) %}
-	<h3 id="{{ label }}">{{ heading }}<a class="header-anchor" href="#{{ label }}"><i class="fa fa-link" aria-hidden="true"></i></a></h3>
+	<h3 id="{{ label }}">{{ heading }}<a class="header-anchor" href="#{{ label }}"><i class="fa-solid fa-link" aria-hidden="true"></i></a></h3>
 {% endmacro %}
 
 <h1>Using the Site</h1>
@@ -112,7 +112,7 @@
 {{ linkable_header("Deleting Your Torrent", "delete") }}
 <div>
 	If you wish to delete one of your torrents, navigate to the torrent's page,
-	click the Edit (<i class="fa fa-fw fa-pencil"></i>) icon on the top left,
+	click the Edit (<i class="fa-solid fa-fw fa-pencil"></i>) icon on the top left,
 	scroll down and hit the <button type="button" class="btn btn-xs btn-danger">Delete</button>
 	button.
 </div>

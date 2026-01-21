@@ -28,30 +28,30 @@
 				{%+ call render_column_header("hdr-name", "width:auto;") -%}
 					Name
 				{%- endcall %}
-				{%+ call render_column_header("hdr-comments", "width:50px;", center_text=True, sort_key="comments", header_title="Comments") -%}
-					<i class="fa fa-comments-o"></i>
-				{%- endcall %}
-				{%+ call render_column_header("hdr-link", "width:70px;", center_text=True) -%}
-					Link
-				{%- endcall %}
-				{%+ call render_column_header("hdr-size", "width:100px;", center_text=True, sort_key="size") -%}
-					Size
-				{%- endcall %}
-				{%+ call render_column_header("hdr-date", "width:140px;", center_text=True, sort_key="id", header_title="In UTC") -%}
-					Date
-				{%- endcall %}
+			{%+ call render_column_header("hdr-comments", "width:50px;", center_text=True, sort_key="comments", header_title="Comments") -%}
+				<i class="fa-solid fa-comments"></i>
+			{%- endcall %}
+			{%+ call render_column_header("hdr-link", "width:70px;", center_text=True) -%}
+				Link
+			{%- endcall %}
+			{%+ call render_column_header("hdr-size", "width:100px;", center_text=True, sort_key="size") -%}
+				Size
+			{%- endcall %}
+			{%+ call render_column_header("hdr-date", "width:140px;", center_text=True, sort_key="id", header_title="In UTC") -%}
+				Date
+			{%- endcall %}
 
-				{% if config.ENABLE_SHOW_STATS %}
-				{%+ call render_column_header("hdr-seeders", "width:50px;", center_text=True, sort_key="seeders", header_title="Seeders") -%}
-					<i class="fa fa-arrow-up" aria-hidden="true"></i>
-				{%- endcall %}
-				{%+ call render_column_header("hdr-leechers", "width:50px;", center_text=True, sort_key="leechers", header_title="Leechers") -%}
-					<i class="fa fa-arrow-down" aria-hidden="true"></i>
-				{%- endcall %}
-				{%+ call render_column_header("hdr-downloads", "width:50px;", center_text=True, sort_key="downloads", header_title="Completed downloads") -%}
-					<i class="fa fa-check" aria-hidden="true"></i>
-				{%- endcall %}
-				{% endif %}
+			{% if config.ENABLE_SHOW_STATS %}
+			{%+ call render_column_header("hdr-seeders", "width:50px;", center_text=True, sort_key="seeders", header_title="Seeders") -%}
+				<i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+			{%- endcall %}
+			{%+ call render_column_header("hdr-leechers", "width:50px;", center_text=True, sort_key="leechers", header_title="Leechers") -%}
+				<i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
+			{%- endcall %}
+			{%+ call render_column_header("hdr-downloads", "width:50px;", center_text=True, sort_key="downloads", header_title="Completed downloads") -%}
+				<i class="fa-solid fa-check" aria-hidden="true"></i>
+			{%- endcall %}
+			{% endif %}
 			</tr>
 		</thead>
 		<tbody>
@@ -74,7 +74,7 @@
 					{% set com_count = torrent.comment_count %}
 					{% if com_count %}
 					<a href="{{ url_for('torrents.view', torrent_id=torrent_id, _anchor='comments') }}" class="comments" title="{{ '{c} comment{s}'.format(c=com_count, s='s' if com_count > 1 else '') }}">
-						<i class="fa fa-comments-o"></i>{{ com_count -}}
+						<i class="fa-solid fa-comments"></i>{{ com_count -}}
 					</a>
 					{% endif %}
 					{% if use_elastic %}
@@ -85,12 +85,12 @@
 				</td>
 				<td class="text-center">
 					{% if torrent.has_torrent %}
-					<a href="{{ url_for('torrents.download', torrent_id=torrent_id) }}"><i class="fa fa-fw fa-download"></i></a>
+					<a href="{{ url_for('torrents.download', torrent_id=torrent_id) }}"><i class="fa-solid fa-fw fa-download"></i></a>
 					{% endif %}
 					{% if use_elastic %}
-					<a href="{{ create_magnet_from_es_torrent(torrent) }}"><i class="fa fa-fw fa-magnet"></i></a>
+					<a href="{{ create_magnet_from_es_torrent(torrent) }}"><i class="fa-solid fa-fw fa-magnet"></i></a>
 					{% else %}
-					<a href="{{ torrent.magnet_uri }}"><i class="fa fa-fw fa-magnet"></i></a>
+					<a href="{{ torrent.magnet_uri }}"><i class="fa-solid fa-fw fa-magnet"></i></a>
 					{% endif %}
 				</td>
 				<td class="text-center">{{ torrent.filesize | filesizeformat(True) }}</td>

@@ -19,33 +19,33 @@
 </div>
 
 <ul class="nav nav-tabs" id="profileTabs" role="tablist">
-	<li role="presentation" class="active">
-		<a href="#password-change" id="password-change-tab" role="tab" data-toggle="tab" aria-controls="profile" aria-expanded="true">Password</a>
+	<li class="nav-item" role="presentation">
+		<button class="nav-link active" id="password-change-tab" data-bs-toggle="tab" data-bs-target="#password-change" type="button" role="tab" aria-controls="password-change" aria-selected="true">Password</button>
 	</li>
-	<li role="presentation">
-		<a href="#email-change" id="email-change-tab" role="tab" data-toggle="tab" aria-controls="profile" aria-expanded="false">Email</a>
+	<li class="nav-item" role="presentation">
+		<button class="nav-link" id="email-change-tab" data-bs-toggle="tab" data-bs-target="#email-change" type="button" role="tab" aria-controls="email-change" aria-selected="false">Email</button>
 	</li>
-	<li role="presentation">
-		<a href="#preferences-change" id="preferences-change-tab" role="tab" data-toggle="tab" aria-controls="profile" aria-expanded="false">Preferences</a>
+	<li class="nav-item" role="presentation">
+		<button class="nav-link" id="preferences-change-tab" data-bs-toggle="tab" data-bs-target="#preferences-change" type="button" role="tab" aria-controls="preferences-change" aria-selected="false">Preferences</button>
 	</li>
 </ul>
 
 <div class="tab-content">
-	<div class="tab-pane fade active in" role="tabpanel" id="password-change" aria-labelledby="password-change-tab">
+	<div class="tab-pane fade show active" role="tabpanel" id="password-change" aria-labelledby="password-change-tab">
 		<form method="POST">
 			{{ form.csrf_token }}
 			<div class="row">
-				<div class="form-group col-md-4">
+				<div class="col-md-4">
 					{{ render_field(form.current_password, class_='form-control', placeholder='Current password') }}
 				</div>
 			</div>
 			<div class="row">
-				<div class="form-group col-md-4">
+				<div class="col-md-4">
 					{{ render_field(form.new_password, class_='form-control', placeholder='New password') }}
 				</div>
 			</div>
 			<div class="row">
-				<div class="form-group col-md-4">
+				<div class="col-md-4">
 					{{ render_field(form.password_confirm, class_='form-control', placeholder='New password (confirm)') }}
 				</div>
 			</div>
@@ -60,18 +60,18 @@
 		<form method="POST">
 			{{ form.csrf_token }}
 			<div class="row">
-				<div class="form-group col-md-4">
-					<label class="control-label" for="current_email">Current Email</label>
+				<div class="col-md-4">
+					<label class="form-label" for="current_email">Current Email</label>
 					<div>{{ g.user.email }}</div>
 				</div>
 			</div>
 			<div class="row">
-				<div class="form-group col-md-4">
+				<div class="col-md-4">
 					{{ render_field(form.email, class_='form-control', placeholder='New email address') }}
 				</div>
 			</div>
 			<div class="row">
-				<div class="form-group col-md-4">
+				<div class="col-md-4">
 					{{ render_field(form.current_password, class_='form-control', placeholder='Current password') }}
 				</div>
 			</div>
@@ -86,13 +86,15 @@
 		<form method="POST">
 			{{ form.csrf_token }}
 				<div class="row">
-					<div class="form-group col-md-4">
-						{% if g.user.preferences.hide_comments %}
-							{{ form.hide_comments(checked='') }}
-						{% else %}
-							{{ form.hide_comments }}
-						{% endif %}
-							{{ form.hide_comments.label }}
+					<div class="col-md-4">
+						<div class="form-check">
+							{% if g.user.preferences.hide_comments %}
+								{{ form.hide_comments(checked='', class_='form-check-input') }}
+							{% else %}
+								{{ form.hide_comments(class_='form-check-input') }}
+							{% endif %}
+							{{ form.hide_comments.label(class_='form-check-label') }}
+						</div>
 					</div>
 				</div>
 				<div class="row">

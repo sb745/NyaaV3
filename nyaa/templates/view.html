@@ -6,16 +6,16 @@
 {% endblock %}
 {% block body %}
 {% from "_formhelpers.html" import render_field, render_markdown_editor %}
-<div class="panel panel-{% if torrent.deleted %}deleted{% elif torrent.remake %}danger{% elif torrent.trusted %}success{% else %}default{% endif %}">
-	<div class="panel-heading"{% if torrent.hidden %} style="background-color: darkgray;"{% endif %}>
-		<h3 class="panel-title">
+<div class="card {% if torrent.deleted %}border-danger{% elif torrent.remake %}border-danger{% elif torrent.trusted %}border-success{% endif %}">
+	<div class="card-header"{% if torrent.hidden %} style="background-color: darkgray;"{% endif %}>
+		<h3 class="card-title">
 			{% if can_edit %}
-			<a href="{{ url_for('torrents.edit', torrent_id=torrent.id) }}" title="Edit torrent"><i class="fa fa-fw fa-pencil"></i></a>
+			<a href="{{ url_for('torrents.edit', torrent_id=torrent.id) }}" title="Edit torrent"><i class="fa-solid fa-fw fa-pencil"></i></a>
 			{% endif %}
 			{{ torrent.display_name }}
 		</h3>
 	</div>
-	<div class="panel-body">
+	<div class="card-body">
 		<div class="row">
 			<div class="col-md-1">Category:</div>
 			<div class="col-md-5">
@@ -30,10 +30,10 @@
 			<div class="col-md-1">Submitter:</div>
 			<div class="col-md-5">
 				{% set user_url = torrent.user and url_for('users.view_user', user_name=torrent.user.username) %}
-				{%- if not torrent.anonymous and torrent.user -%}
-				<a class="text-{{ torrent.user.userlevel_color }}" href="{{ user_url }}" data-toggle="tooltip" title="{{ torrent.user.userlevel_str }}">{{ torrent.user.username }}</a>
-				{%- else -%}
-				Anonymous {% if torrent.user and (g.user == torrent.user or g.user.is_moderator) %}(<a class="text-{{ torrent.user.userlevel_color }}" href="{{ user_url }}" data-toggle="tooltip" title="{{ torrent.user.userlevel_str }}">{{ torrent.user.username }}</a>){% endif %}
+			{%- if not torrent.anonymous and torrent.user -%}
+			<a class="text-{{ torrent.user.userlevel_color }}" href="{{ user_url }}" data-bs-toggle="tooltip" title="{{ torrent.user.userlevel_str }}">{{ torrent.user.username }}</a>
+			{%- else -%}
+			Anonymous {% if torrent.user and (g.user == torrent.user or g.user.is_moderator) %}(<a class="text-{{ torrent.user.userlevel_color }}" href="{{ user_url }}" data-bs-toggle="tooltip" title="{{ torrent.user.userlevel_str }}">{{ torrent.user.username }}</a>){% endif %}
 				{%- endif -%}
 				{% if g.user and g.user.is_superadmin and torrent.uploader_ip %}
 				({{ torrent.uploader_ip_string }})
@@ -72,18 +72,18 @@
 		</div>
 	</div><!--/.panel-body -->
 
-	<div class="panel-footer clearfix">
-		{% if torrent.has_torrent %}<a href="{{ url_for('torrents.download', torrent_id=torrent.id )}}"><i class="fa fa-download fa-fw"></i>Download Torrent</a> or {% endif %}<a href="{{ torrent.magnet_uri }}" class="card-footer-item"><i class="fa fa-magnet fa-fw"></i>Magnet</a>
+	<div class="card-footer">
+		{% if torrent.has_torrent %}<a href="{{ url_for('torrents.download', torrent_id=torrent.id )}}"><i class="fa-solid fa-download fa-fw"></i>Download Torrent</a> or {% endif %}<a href="{{ torrent.magnet_uri }}" class="card-footer-item"><i class="fa-solid fa-magnet fa-fw"></i>Magnet</a>
 		{% if g.user and g.user.age > config['RATELIMIT_ACCOUNT_AGE'] %}
-		<button type="button" class="btn btn-xs btn-danger pull-right" data-toggle="modal" data-target="#reportModal">
+		<button type="button" class="btn btn-sm btn-danger float-end" data-bs-toggle="modal" data-bs-target="#reportModal">
 			Report
 		</button>
 		{% endif %}
 	</div>
-</div><!--/.panel -->
+</div><!--/.card -->
 
-<div class="panel panel-default">
-	<div markdown-text class="panel-body" id="torrent-description">
+<div class="card">
+	<div markdown-text class="card-body" id="torrent-description">
 		{%- if torrent.description -%}
 		{# Escape newlines into html entities because CF strips blank newlines #}
 		{{- torrent.description | escape | replace('\r\n', '\n') | replace('\n', '&#10;'|safe) -}}
@@ -95,40 +95,40 @@
 
 {% cache 86400, "filelist", torrent.info_hash_as_hex %}
 {% if files and files.__len__() <= config.MAX_FILES_VIEW %}
-<div class="panel panel-default">
-	<div class="panel-heading">
-		<h3 class="panel-title">File list</h3>
+<div class="card">
+	<div class="card-header">
+		<h3 class="card-title">File list</h3>
 	</div>
 
-	<div class="torrent-file-list panel-body">
+	<div class="torrent-file-list card-body">
 		<ul>
 		{% for key, value in files.items() recursive -%}
 		{% if value is iterable %}
 			{% set pre_expanded = not loop.depth0 and value.items()|length <= 20 %}
 			<li>
-				<a href="" class="folder"><i class="fa fa-folder{% if pre_expanded %}-open{% endif %}"></i>{{ key }}</a>
+				<a href="" class="folder"><i class="fa-solid fa-folder{% if pre_expanded %}-open{% endif %}"></i>{{ key }}</a>
 				<ul{% if pre_expanded %} data-show="yes"{% endif %}>{{ '\n' + loop(value.items()) }}
 				</ul>
 			</li>
 		{% else %}
-			<li><i class="fa fa-file"></i>{{ key }} <span class="file-size">({{ value | filesizeformat(True) }})</span></li>
+			<li><i class="fa-solid fa-file"></i>{{ key }} <span class="file-size">({{ value | filesizeformat(True) }})</span></li>
 		{% endif %}
 		{% endfor %}
 		</ul>
 	</div>
-</div><!--/.panel -->
+</div><!--/.card -->
 {% elif files %}
-<div class="panel panel-default">
-	<div class="panel-heading panel-heading-collapse">
-		<h3 class="panel-title">
+<div class="card">
+	<div class="card-header">
+		<h3 class="card-title">
 			Too many files to display.
 		</h3>
 	</div>
 </div>
 {% else %}
-<div class="panel panel-default">
-	<div class="panel-heading panel-heading-collapse">
-		<h3 class="panel-title">
+<div class="card">
+	<div class="card-header">
+		<h3 class="card-title">
 			File list is not available for this torrent.
 		</h3>
 	</div>
@@ -136,21 +136,21 @@
 {% endif %}
 {% endcache %}
 
-<div id="comments" class="panel panel-default">
-	<div class="panel-heading">
-		<a data-toggle="collapse" href="#collapse-comments" role="button" aria-expanded="{% if g.user and g.user.preferences.hide_comments %}false{% else %}true{% endif %}" aria-controls="collapse-comments">
-		<h3 class="panel-title">
+<div id="comments" class="card">
+	<div class="card-header">
+		<a data-bs-toggle="collapse" href="#collapse-comments" role="button" aria-expanded="{% if g.user and g.user.preferences.hide_comments %}false{% else %}true{% endif %}" aria-controls="collapse-comments">
+		<h3 class="card-title">
 			Comments - {{ torrent.comment_count }}
 		</h3>
 		</a>
 	</div>
-	<div class="collapse {% if g.user and g.user.preferences.hide_comments %}{% else %}in{% endif %}" id="collapse-comments">
+	<div class="collapse {% if g.user and g.user.preferences.hide_comments %}{% else %}show{% endif %}" id="collapse-comments">
 	{% for comment in comments %}
-	<div class="panel panel-default comment-panel" id="com-{{ loop.index }}">
-		<div class="panel-body">
+	<div class="card comment-panel" id="com-{{ loop.index }}">
+		<div class="card-body">
 			<div class="col-md-2">
 				<p>
-					<a class="text-{{ comment.user.userlevel_color }}" href="{{ url_for('users.view_user', user_name=comment.user.username) }}" data-toggle="tooltip" title="{{ comment.user.userlevel_str }}">{{ comment.user.username }}</a>
+					<a class="text-{{ comment.user.userlevel_color }}" href="{{ url_for('users.view_user', user_name=comment.user.username) }}" data-bs-toggle="tooltip" title="{{ comment.user.userlevel_str }}">{{ comment.user.username }}</a>
 					{% if comment.user.id == torrent.uploader_id and not torrent.anonymous %}
 					(uploader)
 					{% endif %}
@@ -215,7 +215,7 @@
 	{% if torrent.comment_locked %}
 	<div class="alert alert-warning">
 		<p>
-			<i class="fa fa-lock" aria-hidden="true"></i>
+			<i class="fa-solid fa-lock" aria-hidden="true"></i>
 			Comments have been locked.
 		</p>
 	</div>
@@ -260,8 +260,7 @@
 	<div class="modal-dialog" role="document">
 		<div class="modal-content">
 			<div class="modal-header">
-				<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span
-						aria-hidden="true">&times;</span></button>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 				<h4 class="modal-title">Report torrent #{{ torrent.id }}</h4>
 			</div>
 			<div class="modal-body">
@@ -274,8 +273,8 @@
 				<form method="POST" action="{{ url_for('torrents.report', torrent_id=torrent.id) }}">
 					{{ report_form.csrf_token }}
 					{{ render_field(report_form.reason, class_='form-control', maxlength=255) }}
-					<div style="float: right;">
-						<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+					<div class="float-end">
+						<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
 						<button type="submit" id="reportSubmit" class="btn btn-danger">Report</button>
 					</div>
 				</form>

@@ -28,51 +28,45 @@
 		{{ render_field(form.information, class_='form-control', placeholder='Your website or IRC channel') }}
 		</div>
 		<div class="col-md-6">
-			<label class="control-label">Torrent flags</label><br>
-			<div class="btn-group" data-toggle="buttons">
+			<label class="form-label">Torrent flags</label><br>
+			<div class="btn-group" role="group">
 				{# Only allow changing anonymous status when an uploader exists #}
 				{% if torrent.uploader_id %}
-				<label class="btn btn-default {% if torrent.anonymous %}active{% endif %}" title="Upload torrent anonymously (don't display your username)">
-					{{ form.is_anonymous }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+				<input type="checkbox" class="btn-check" id="is_anonymous" {% if torrent.anonymous %}checked{% endif %} name="is_anonymous">
+				<label class="btn btn-secondary {% if torrent.anonymous %}active{% endif %}" for="is_anonymous" title="Upload torrent anonymously (don't display your username)">
+					<span class="fa-solid fa-square-check"></span>
 					Anonymous
 				</label>
 				{% endif %}
-				<label class="btn btn-grey {% if torrent.hidden %}active{% endif %}" title="Hide torrent from listing">
-					{{ form.is_hidden }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+				<input type="checkbox" class="btn-check" id="is_hidden" {% if torrent.hidden %}checked{% endif %} name="is_hidden">
+				<label class="btn btn-secondary {% if torrent.hidden %}active{% endif %}" for="is_hidden" title="Hide torrent from listing">
+					<span class="fa-solid fa-square-check"></span>
 					Hidden
 				</label>
 			</div>
-			<div class="hidden-xl"><br></div>
-			<div class="btn-group" data-toggle="buttons">
-				<label class="btn btn-danger {% if torrent.remake %}active{% endif %}" title="This torrent is derived from another release">
-					{{ form.is_remake }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+			<div class="d-none d-xl-block"><br></div>
+			<div class="btn-group" role="group">
+				<input type="checkbox" class="btn-check" id="is_remake" {% if torrent.remake %}checked{% endif %} name="is_remake">
+				<label class="btn btn-danger {% if torrent.remake %}active{% endif %}" for="is_remake" title="This torrent is derived from another release">
+					<span class="fa-solid fa-square-check"></span>
 					Remake
 				</label>
-				<label class="btn btn-warning {% if torrent.complete %}active{% endif %}" title="This torrent is a complete batch (eg. season)">
-					{{ form.is_complete }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+				<input type="checkbox" class="btn-check" id="is_complete" {% if torrent.complete %}checked{% endif %} name="is_complete">
+				<label class="btn btn-warning {% if torrent.complete %}active{% endif %}" for="is_complete" title="This torrent is a complete batch (eg. season)">
+					<span class="fa-solid fa-square-check"></span>
 					Complete
 				</label>
 				{% if g.user.is_trusted %}
-				<label class="btn btn-success {% if torrent.trusted %}active{% endif %}" title="Mark torrent trusted">
-					{{ form.is_trusted }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+				<input type="checkbox" class="btn-check" id="is_trusted" {% if torrent.trusted %}checked{% endif %} name="is_trusted">
+				<label class="btn btn-success {% if torrent.trusted %}active{% endif %}" for="is_trusted" title="Mark torrent trusted">
+					<span class="fa-solid fa-square-check"></span>
 					Trusted
 				</label>
 				{% endif %}
 				{% if g.user.is_moderator %}
-				<label class="btn btn-default {% if torrent.comment_locked %}active{% endif %}" title="Lock comments">
-					{{ form.is_comment_locked }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+				<input type="checkbox" class="btn-check" id="is_comment_locked" {% if torrent.comment_locked %}checked{% endif %} name="is_comment_locked">
+				<label class="btn btn-secondary {% if torrent.comment_locked %}active{% endif %}" for="is_comment_locked" title="Lock comments">
+					<span class="fa-solid fa-square-check"></span>
 					Lock Comments
 				</label>
 				{% endif %}
@@ -95,12 +89,12 @@
 <hr>
 
 <div class="row">
-	<div class="col-md-5"">
-		<div class="panel panel-danger">
-			<div class="panel-heading">
-				<h3 class="panel-title">Danger Zone</h3>
+	<div class="col-md-5">
+		<div class="card border-danger">
+			<div class="card-header bg-danger text-white">
+				<h3 class="card-title">Danger Zone</h3>
 			</div>
-			<div class="panel-body">
+			<div class="card-body">
 				<form method="POST">
 					{{ delete_form.csrf_token }}
 
@@ -119,7 +113,7 @@
 {% if not torrent.deleted %}
 					<p class="lead">
 						Delete torrent.
-						{{ delete_form.delete(class="btn btn-danger pull-right") }}
+						{{ delete_form.delete(class="btn btn-danger float-end") }}
 					</p>
 					<p>
 						Deleted torrents are retained for backup purposes.<br>
@@ -130,7 +124,7 @@
 					<hr>
 					<p class="lead">
 						Delete and ban torrent.
-						{{ delete_form.ban(class="btn btn-danger pull-right") }}
+						{{ delete_form.ban(class="btn btn-danger float-end") }}
 					</p>
 					<p>
 						Soft deletes the torrent.<br>
@@ -141,9 +135,9 @@
 					<p class="lead">
 						Undelete{% if torrent.banned %} and unban{% endif %} torrent.
 						{% if torrent.banned %}
-						{{ delete_form.undelete(value="Undelete & Unban", class="btn btn-info pull-right") }}
+						{{ delete_form.undelete(value="Undelete & Unban", class="btn btn-info float-end") }}
 						{% else %}
-						{{ delete_form.undelete(class="btn btn-info pull-right") }}
+						{{ delete_form.undelete(class="btn btn-info float-end") }}
 						{% endif %}
 					</p>
 					<p>
@@ -154,7 +148,7 @@
 					<hr>
 					<p class="lead">
 						Unban torrent.
-						{{ delete_form.unban(class="btn btn-info pull-right") }}
+						{{ delete_form.unban(class="btn btn-info float-end") }}
 					</p>
 					<p>
 						Unbans torrent without undeleting it.<br>
@@ -164,7 +158,7 @@
 					<hr>
 					<p class="lead">
 						Ban torrent.
-						{{ delete_form.ban(value="Ban", class="btn btn-danger pull-right") }}
+						{{ delete_form.ban(value="Ban", class="btn btn-danger float-end") }}
 					</p>
 					<p>
 						Bans it from the tracker and disallows reuploading it.
@@ -203,7 +197,7 @@
 					{{ render_field(ban_form.reason, class_="form-control", placeholder="Specify a ban reason.") }}<br>
 
 			{% if torrent.user %}
-					<div class="pull-left">
+					<div class="float-start">
 						{% if torrent.user.is_banned %}
 						<button type="button" class="btn btn-danger disabled">Already banned</button>
 						{% else %}
@@ -218,7 +212,7 @@
 						{{ ban_form.ban_user(class="btn btn-danger") }}
 						{% endif %}
 					</div>
-					<div class="pull-right">
+					<div class="float-end">
 						{% if ipbanned %}
 						<button type="button" class="btn btn-danger disabled">Already IP banned</button>
 						{% else %}
@@ -234,10 +228,10 @@
 						{% endif %}
 					</div>
 			{% else %}
-					<div class="pull-left">
+					<div class="float-start">
 						<button type="button" class="btn btn-danger disabled">No user</button>
 					</div>
-					<div class="pull-right">
+					<div class="float-end">
 						{% if ipbanned %}
 						<button type="button" class="btn btn-danger disabled">Already IP banned</button>
 						{% else %}

@@ -62,47 +62,42 @@
 		{{ render_field(upload_form.category, class_='form-control')}}
 		</div>
 	</div>
-	<div class="row form-group">
+	<div class="row">
 		<div class="col-md-6">
 			{{ render_field(upload_form.information, class_='form-control', placeholder='Your website or IRC channel') }}
 		</div>
 		<div class="col-md-6">
-			<label class="control-label">Torrent flags</label><br>
+			<label class="form-label">Torrent flags</label><br>
 
-			<div class="btn-group" data-toggle="buttons">
-				<label class="btn btn-default {% if not g.user %}active disabled{% endif %}" title="Upload torrent anonymously (don't display your username)">
-					{{ upload_form.is_anonymous(disabled=(False if g.user else ""), checked=(False if g.user else "")) }}
-					{% if not g.user %}<span class="glyphicon glyphicon-ban-circle"></span>{% endif %}
-					{% if g.user %}<span class="glyphicon glyphicon-check"></span>{% endif %}
-					{% if g.user %}<span class="glyphicon glyphicon-unchecked"></span>{% endif %}
+			<div class="btn-group" role="group">
+				<input type="checkbox" class="btn-check" id="is_anonymous" {% if not g.user %}disabled checked{% endif %} name="is_anonymous" {% if not g.user %}disabled{% endif %}>
+				<label class="btn btn-secondary {% if not g.user %}active disabled{% endif %}" for="is_anonymous" title="Upload torrent anonymously (don't display your username)">
+					{% if not g.user %}<span class="fa-solid fa-ban"></span>{% endif %}
+					{% if g.user %}<span class="fa-solid fa-square-check"></span>{% endif %}
 					Anonymous
 				</label>
-				<label class="btn btn-grey" title="Hide torrent from listing">
-					{{ upload_form.is_hidden }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+				<input type="checkbox" class="btn-check" id="is_hidden" name="is_hidden">
+				<label class="btn btn-secondary" for="is_hidden" title="Hide torrent from listing">
+					<span class="fa-solid fa-square-check"></span>
 					Hidden
 				</label>
 			</div>
-			<div class="hidden-xl hidden-lg"><br></div>
-			<div class="btn-group" data-toggle="buttons">
-				<label class="btn btn-danger" title="This torrent is derived from another release">
-					{{ upload_form.is_remake }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+			<div class="d-none d-lg-block"><br></div>
+			<div class="btn-group" role="group">
+				<input type="checkbox" class="btn-check" id="is_remake" name="is_remake">
+				<label class="btn btn-danger" for="is_remake" title="This torrent is derived from another release">
+					<span class="fa-solid fa-square-check"></span>
 					Remake
 				</label>
-				<label class="btn btn-warning" title="This torrent is a complete batch (eg. season)">
-					{{ upload_form.is_complete }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+				<input type="checkbox" class="btn-check" id="is_complete" name="is_complete">
+				<label class="btn btn-warning" for="is_complete" title="This torrent is a complete batch (eg. season)">
+					<span class="fa-solid fa-square-check"></span>
 					Complete
 				</label>
 				{% if g.user.is_trusted %}
-				<label class="btn btn-success active" title="Mark torrent trusted">
-					{{ upload_form.is_trusted(checked="") }}
-					<span class="glyphicon glyphicon-check"></span>
-					<span class="glyphicon glyphicon-unchecked"></span>
+				<input type="checkbox" class="btn-check" id="is_trusted" name="is_trusted" checked>
+				<label class="btn btn-success active" for="is_trusted" title="Mark torrent trusted">
+					<span class="fa-solid fa-square-check"></span>
 					Trusted
 				</label>
 				{% endif %}
