@@ -1,0 +1,49 @@
+# Development override for docker-compose
+# This file is automatically loaded by docker-compose when present
+
+services:
+  app:
+    environment:
+      - DEBUG=true
+      - FLASK_ENV=development
+    volumes:
+      - ../:/app:delegated
+      - ./configs/:/app/.docker/configs:ro
+    command: python run.py
+    ports:
+      - "5500:5500"
+      - "5678:5678"  # Debug port
+    healthcheck:
+      disable: true
+    stdin_open: true
+    tty: true
+
+  mariadb:
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=nyaav3
+      - MYSQL_USER=nyaauser
+      - MYSQL_PASSWORD=nyaapass
+    ports:
+      - "3306:3306"
+
+  elasticsearch:
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  sync_es:
+    # Disable sync_es in development by default
+    # Can be enabled by uncommenting below
+    # deploy:
+    #   replicas: 0
+    profiles:
+      - sync

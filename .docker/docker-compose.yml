@@ -1,0 +1,189 @@
+services:
+  # Flask application
+  app:
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+    container_name: nyaav3-app
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - redis
+    ports:
+      - "5500:5500"
+    env_file:
+      - .env
+    environment:
+      # Provide safe fallbacks; prefer .env
+      - DB_HOST=${DB_HOST:-mariadb}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME:-nyaav3}
+      - DB_USER=${DB_USER:-nyaauser}
+      - DB_PASSWORD=${DB_PASSWORD:-nyaapass}
+      - ES_HOSTS=${ES_HOSTS:-http://elasticsearch:9200}
+      - ES_INDEX_NAME=${ES_INDEX_NAME:-nyaa}
+      - USE_ELASTIC_SEARCH=${USE_ELASTIC_SEARCH:-true}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redispass}
+      - SITE_FLAVOR=${SITE_FLAVOR:-nyaa}
+      - DEBUG=${DEBUG:-false}
+      - SECRET_KEY=${SECRET_KEY:-changeme_in_production}
+      - CSRF_SESSION_KEY=${CSRF_SESSION_KEY:-changeme_in_production}
+      - ENABLE_BINLOG_SYNC=${ENABLE_BINLOG_SYNC:-true}
+      - ES_RUN_IMPORT=${ES_RUN_IMPORT:-false}
+      - STATE_DIR=${STATE_DIR:-/app/state}
+      - APP_USER=${APP_USER:-appuser}
+      - NYAA_STATIC_FOLDER=${NYAA_STATIC_FOLDER:-/app/state/static}
+      - INFO_DICTS_DIR=${INFO_DICTS_DIR:-/app/state/info_dicts}
+      - TORRENTS_DIR=${TORRENTS_DIR:-/app/torrents}
+    volumes:
+      - nyaav3_app_torrents:/app/torrents
+      - nyaav3_app_logs:/app/logs
+      - nyaav3_app_state:/app/state
+      # For development: mount source code
+      # - ../:/app:delegated
+    networks:
+      - nyaav3-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5500/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Basic hardening (still compatible with Python tooling in the image)
+    security_opt:
+      - no-new-privileges:true
+
+  # MariaDB database
+  mariadb:
+    build:
+      context: ..
+      dockerfile: .docker/mariadb/Dockerfile
+    container_name: nyaav3-mariadb
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_bin --log-bin --server-id=1 --log-basename=master1 --binlog-format=ROW --binlog-row-metadata=full --binlog-row-image=full
+    env_file:
+      - .env
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpass}
+      - MYSQL_DATABASE=${DB_NAME:-nyaav3}
+      - MYSQL_USER=${DB_USER:-nyaauser}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-nyaapass}
+    volumes:
+      - nyaav3_mariadb_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - nyaav3-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USER:-nyaauser}", "-p${DB_PASSWORD:-nyaapass}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Elasticsearch (optional - use COMPOSE_PROFILES=es to enable)
+  elasticsearch:
+    image: elasticsearch:9.2.3
+    container_name: nyaav3-elasticsearch
+    restart: unless-stopped
+    profiles: ["es"]
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - nyaav3_elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - nyaav3-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis for caching
+  redis:
+    image: redis:8.4.0-alpine
+    container_name: nyaav3-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redispass}
+    volumes:
+      - nyaav3_redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - nyaav3-network
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -a \"${REDIS_PASSWORD:-redispass}\" ping | grep -q PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Binlog sync service (optional - can also run in app container)
+  sync_es:
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+    container_name: nyaav3-sync-es
+    restart: unless-stopped
+    profiles: ["es"]
+    depends_on:
+      - mariadb
+      - elasticsearch
+    env_file:
+      - .env
+    entrypoint: ["/usr/local/bin/nyaav3-sync-es-entrypoint.sh"]
+    command: []
+    environment:
+      - DB_HOST=${DB_HOST:-mariadb}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME:-nyaav3}
+      - DB_USER=${DB_USER:-nyaauser}
+      - DB_PASSWORD=${DB_PASSWORD:-nyaapass}
+      - ES_HOSTS=${ES_HOSTS:-http://elasticsearch:9200}
+      - ES_INDEX_NAME=${ES_INDEX_NAME:-nyaa}
+      - STATE_DIR=${STATE_DIR:-/app/state}
+      - APP_USER=${APP_USER:-appuser}
+      - NYAA_STATIC_FOLDER=${NYAA_STATIC_FOLDER:-/app/state/static}
+      - INFO_DICTS_DIR=${INFO_DICTS_DIR:-/app/state/info_dicts}
+      - TORRENTS_DIR=${TORRENTS_DIR:-/app/torrents}
+    volumes:
+      - nyaav3_app_state:/app/state
+      # optional override; if absent, sync_es_entrypoint.sh generates a compatible JSON
+      - ./configs/es_sync_config.json:/app/es_sync_config.json:ro
+    networks:
+      - nyaav3-network
+    # Optional: uncomment if you want separate sync service
+    # deploy:
+    #   replicas: 0
+
+# Named volumes for persistent data
+volumes:
+  nyaav3_mariadb_data:
+    driver: local
+  nyaav3_elasticsearch_data:
+    driver: local
+  nyaav3_redis_data:
+    driver: local
+  nyaav3_app_torrents:
+    driver: local
+  nyaav3_app_logs:
+    driver: local
+  nyaav3_app_state:
+    driver: local
+
+# Network
+networks:
+  nyaav3-network:
+    driver: bridge

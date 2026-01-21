@@ -22,7 +22,13 @@ flask.url_for = caching_url_for
 
 def create_app(config: Any) -> Flask:
     """ Nyaa app factory """
-    app = flask.Flask(__name__)
+    # In Docker dev mode, the repo is often bind-mounted to /app and not writable.
+    # Allow overriding the static folder to a writable location (e.g. /app/state/static)
+    # so Flask-Assets/webassets can write cache/build artifacts without permission errors.
+    static_folder = os.getenv("NYAA_STATIC_FOLDER")
+    # Flask treats static_folder=None as "disable static handling".
+    # We want default behavior unless explicitly overridden.
+    app = flask.Flask(__name__, static_folder=static_folder or 'static')
     app.config.from_object(config)
 
     # Session cookie configuration

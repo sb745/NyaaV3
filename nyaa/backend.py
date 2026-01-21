@@ -373,7 +373,8 @@ def handle_torrent_upload(upload_form, uploading_user=None, fromAPI=False):
     if app.config.get('BACKUP_TORRENT_FOLDER'):
         torrent_file.seek(0, 0)
 
-        torrent_dir = app.config['BACKUP_TORRENT_FOLDER']
+        # Prefer an absolute, writable directory if configured (Docker sets this via TORRENTS_DIR)
+        torrent_dir = app.config.get('TORRENTS_DIR') or app.config['BACKUP_TORRENT_FOLDER']
         os.makedirs(torrent_dir, exist_ok=True)
 
         torrent_path = os.path.join(torrent_dir, '{}.{}'.format(
