@@ -252,8 +252,8 @@ class TorrentBase(DeclarativeHelperBase):
     def info_dict_path(self):
         ''' Returns a path to the info_dict file in form of 'info_dicts/aa/bb/aabbccddee...' '''
         info_hash = self.info_hash_as_hex
-        return os.path.join(app.config['BASE_DIR'], 'info_dicts',
-                            info_hash[0:2], info_hash[2:4], info_hash)
+        base_dir = app.config.get('INFO_DICTS_DIR') or os.path.join(app.config['BASE_DIR'], 'info_dicts')
+        return os.path.join(base_dir, info_hash[0:2], info_hash[2:4], info_hash)
 
     @property
     def info_hash_as_b32(self):

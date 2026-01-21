@@ -7,6 +7,7 @@ from markupsafe import Markup
 
 import flask
 from flask_paginate import Pagination
+from sqlalchemy import func
 
 from itsdangerous import BadSignature, URLSafeSerializer
 
@@ -223,9 +224,24 @@ def view_user_comments(user_name):
 
     comments_per_page = 100
 
-    comments_query = (models.Comment.query.filter(models.Comment.user == user)
-                                          .order_by(models.Comment.created_time.desc()))
-    comments_query = comments_query.paginate_faste(page_number, per_page=comments_per_page, step=5)
+    from sqlalchemy import select
+    query = select(models.Comment).filter(models.Comment.user_id == user.id).order_by(models.Comment.created_time.desc())
+    count_query = select(func.count(models.Comment.id)).filter(models.Comment.user_id == user.id)
+    
+    # Get total count
+    total_count = db.session.execute(count_query).scalar_one_or_none() or 0
+    
+    # Apply pagination
+    paginated_query = query.limit(comments_per_page).offset((page_number - 1) * comments_per_page)
+    comments = db.session.execute(paginated_query).scalars().all()
+    
+    if not comments and page_number != 1:
+        flask.abort(404)
+    
+    # Use CustomPagination for consistency
+    from nyaa.custom_pagination import CustomPagination
+    comments_query = CustomPagination(None, page_number, comments_per_page, total_count, comments)
+    
     return flask.render_template('user_comments.html',
                                  comments_query=comments_query,
                                  user=user)

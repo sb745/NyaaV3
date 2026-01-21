@@ -467,9 +467,12 @@ def search_db(term: str = '', user: Optional[int] = None, sort: str = 'id',
         sort_column = sort_keys['id']
         order = 'desc'
 
-    model_class = models.TorrentNameSearch if term else models.Torrent
-
-    # Create the base query
+    # Determine which model class to use
+    # Use TorrentNameSearch for full-text search if MySQL + term exists
+    use_fulltext = app.config.get('USE_MYSQL') and term
+    model_class = models.TorrentNameSearch if use_fulltext else models.Torrent
+    
+    # Create the base query using the appropriate model class
     query = select(model_class)
     count_query = select(func.count(model_class.id))
 
@@ -544,10 +547,21 @@ def search_db(term: str = '', user: Optional[int] = None, sort: str = 'id',
     if term:
         for item in shlex.split(term, posix=False):
             if len(item) >= 2:
-                fulltext_filter = FullTextSearch(
-                    item, models.TorrentNameSearch, FullTextMode.NATURAL)
-                query = query.where(fulltext_filter)
-                count_query = count_query.where(fulltext_filter)
+                try:
+                    # Try to use full-text search first (MySQL only)
+                    if app.config.get('USE_MYSQL'):
+                        fulltext_filter = FullTextSearch(
+                            item, models.TorrentNameSearch, FullTextMode.NATURAL)
+                        query = query.where(fulltext_filter)
+                        count_query = count_query.where(fulltext_filter)
+                    else:
+                        # Non-MySQL database, use LIKE
+                        raise ImportError("Full-text search not available")
+                except Exception as e:
+                    # Fallback to LIKE search if full-text search fails
+                    like_filter = models.Torrent.display_name.ilike(f"%{item}%")
+                    query = query.where(like_filter)
+                    count_query = count_query.where(like_filter)
 
     # Sort and order
     if sort_column.class_ != models.Torrent:

@@ -124,16 +124,28 @@ def reindex_stats(s, index_name):
     # this will always be the case if you're reading the binlog
     # in order; the foreign key constraint on torrent_id prevents
     # the stats row from existing if the torrent isn't around.
-    return {
-        '_op_type': 'update',
-        '_index': index_name,
-        '_id': str(s['torrent_id']),
-        "doc": {
-            "stats_last_updated": s["last_updated"],
-            "download_count": s["download_count"],
-            "leech_count": s['leech_count'],
-            "seed_count": s['seed_count'],
-        }}
+    
+    # Handle cases where binlog doesn't include all columns (e.g., DELETE events)
+    try:
+        torrent_id = s['torrent_id']
+    except KeyError:
+        log.warning(f"Missing torrent_id in stats event. Available keys: {list(s.keys())}")
+        return None
+    
+    try:
+        return {
+            '_op_type': 'update',
+            '_index': index_name,
+            '_id': str(torrent_id),
+            "doc": {
+                "stats_last_updated": s.get("last_updated"),
+                "download_count": s.get("download_count", 0),
+                "leech_count": s.get('leech_count', 0),
+                "seed_count": s.get('seed_count', 0),
+            }}
+    except Exception as e:
+        log.warning(f"Error building stats index document: {e}")
+        return None
 
 def delet_this(row, index_name):
     return {
@@ -197,16 +209,23 @@ class BinlogReader(ExitingThread):
         log.info(f"reading binlog from {stream.log_file}/{stream.log_pos}")
 
         for event in stream:
-            # save the pos of the stream and timestamp with each message, so we
-            # can commit in the other thread. and keep track of process latency
-            pos = (stream.log_file, stream.log_pos, event.timestamp)
-            with stats.pipeline() as s:
-                s.incr('total_events')
-                s.incr(f"event.{event.table}.{type(event).__name__}")
-                s.incr('total_rows', len(event.rows))
-                s.incr(f"rows.{event.table}.{type(event).__name__}", len(event.rows))
-                # XXX not a "timer", but we get a histogram out of it
-                s.timing(f"rows_per_event.{event.table}.{type(event).__name__}", len(event.rows))
+            try:
+                # save the pos of the stream and timestamp with each message, so we
+                # can commit in the other thread. and keep track of process latency
+                pos = (stream.log_file, stream.log_pos, event.timestamp)
+                with stats.pipeline() as s:
+                    s.incr('total_events')
+                    s.incr(f"event.{event.table}.{type(event).__name__}")
+                    s.incr('total_rows', len(event.rows))
+                    s.incr(f"rows.{event.table}.{type(event).__name__}", len(event.rows))
+                    # XXX not a "timer", but we get a histogram out of it
+                    s.timing(f"rows_per_event.{event.table}.{type(event).__name__}", len(event.rows))
+            except UnicodeDecodeError as e:
+                # Handle encoding issues gracefully - log and skip the problematic event
+                # This can happen when data contains invalid UTF-8 sequences
+                log.warning(f"Skipping event with encoding error: {e}")
+                log.warning(f"Event table: {event.table}, type: {type(event).__name__}")
+                continue
 
             if event.table == "nyaa_torrents" or event.table == "sukebei_torrents":
                 if event.table == "nyaa_torrents":
@@ -237,14 +256,14 @@ class BinlogReader(ExitingThread):
                     index_name = "sukebei"
                 if type(event) is WriteRowsEvent:
                     for row in event.rows:
-                        self.write_buf.put(
-                                (pos, reindex_stats(row['values'], index_name)),
-                                block=True)
+                        action = reindex_stats(row['values'], index_name)
+                        if action is not None:
+                            self.write_buf.put((pos, action), block=True)
                 elif type(event) is UpdateRowsEvent:
                     for row in event.rows:
-                        self.write_buf.put(
-                                (pos, reindex_stats(row['after_values'], index_name)),
-                                block=True)
+                        action = reindex_stats(row['after_values'], index_name)
+                        if action is not None:
+                            self.write_buf.put((pos, action), block=True)
                 elif type(event) is DeleteRowsEvent:
                     # uh ok. Assume that the torrent row will get deleted later,
                     # which will clean up the entire es "torrent" document

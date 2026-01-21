@@ -1,0 +1,31 @@
+# MariaDB configuration for binlog replication
+# Based on README.md requirements for Elasticsearch sync
+
+[mysqld]
+# Server configuration
+server-id = 1
+log_bin = mysql-bin
+log_bin_index = mysql-bin.index
+binlog_format = ROW
+expire_logs_days = 10
+max_binlog_size = 100M
+binlog_row_image = full
+
+# Character set
+character-set-server = utf8mb4
+collation-server = utf8mb4_bin
+init_connect = 'SET NAMES utf8mb4'
+
+# Performance
+innodb_buffer_pool_size = 256M
+innodb_log_file_size = 64M
+innodb_flush_log_at_trx_commit = 1
+sync_binlog = 1
+
+# Replication settings
+binlog_do_db = nyaav3
+log_slave_updates = 1
+
+# Security
+skip_name_resolve = 1
+local-infile = 0

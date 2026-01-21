@@ -184,7 +184,7 @@ class RegisterForm(FlaskForm):
 
     password_confirm = PasswordField('Password (confirm)')
 
-    if config['USE_RECAPTCHA']:
+    if config.get('USE_RECAPTCHA', False):
         recaptcha = RecaptchaField()
 
 
