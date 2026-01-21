@@ -1,4 +1,4 @@
-# NyaaV3 [![python](https://img.shields.io/badge/Python-3.14-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org) ![Maintenance](https://img.shields.io/maintenance/yes/2025)
+# NyaaV3 [![python](https://img.shields.io/badge/Python-3.14-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org) ![Maintenance](https://img.shields.io/maintenance/yes/2026)
 
 ## Setting up for development
 This project uses Python 3.14. The codebase has been updated from the original Python 3.7 version to use modern Python features and updated dependencies.
